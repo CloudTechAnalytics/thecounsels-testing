@@ -46,6 +46,7 @@ export function MattersPage() {
                 name: 'Matters',
                 rows: (data ?? []).map((m) => ({
                   'Matter #': m.matter_number ?? '',
+                  'Case #': m.case_number ?? '',
                   Title: m.title,
                   Client: m.client?.display_name ?? '',
                   'Practice area': m.practice_area ?? '',
@@ -110,7 +111,9 @@ export function MattersPage() {
                 <TableRow key={m.id} className="cursor-pointer" onClick={() => navigate(`/matters/${m.id}`)}>
                   <TableCell>
                     <p className="text-sm font-medium">{m.title}</p>
-                    <p className="font-mono text-xs text-muted-foreground">{m.matter_number}</p>
+                    <p className="font-mono text-xs text-muted-foreground">
+                      {m.matter_number}{m.case_number ? ` · Case ${m.case_number}` : ''}
+                    </p>
                   </TableCell>
                   <TableCell className="text-sm">{m.client?.display_name ?? '—'}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{m.practice_area ?? '—'}</TableCell>

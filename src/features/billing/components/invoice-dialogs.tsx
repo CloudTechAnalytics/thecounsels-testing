@@ -100,6 +100,7 @@ export function GenerateInvoiceDialog({
 
   const [clientId, setClientId] = React.useState('')
   const [matterId, setMatterId] = React.useState('')
+  const [issueDate, setIssueDate] = React.useState('')
   const [dueDate, setDueDate] = React.useState('')
   const [taxRate, setTaxRate] = React.useState('0')
   const [selectedTimeIds, setSelectedTimeIds] = React.useState<Set<string>>(new Set())
@@ -110,7 +111,7 @@ export function GenerateInvoiceDialog({
 
   React.useEffect(() => {
     if (open) {
-      setClientId(''); setMatterId(''); setDueDate(''); setTaxRate('0')
+      setClientId(''); setMatterId(''); setIssueDate(''); setDueDate(''); setTaxRate('0')
       setSelectedTimeIds(new Set()); setSelectedExpenseIds(new Set()); setManualItems([])
     }
   }, [open])
@@ -147,6 +148,7 @@ export function GenerateInvoiceDialog({
       const id = await gen.mutateAsync({
         clientId,
         matterId: matterId === NONE ? '' : matterId,
+        issueDate,
         dueDate,
         taxRate: Number(taxRate) || 0,
         timeEntryIds: Array.from(selectedTimeIds),
@@ -254,7 +256,12 @@ export function GenerateInvoiceDialog({
             </div>
           )}
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="space-y-1.5">
+              <Label>Issue date</Label>
+              <Input type="date" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} placeholder="Today" />
+              <p className="text-xs text-muted-foreground">Filing in old records? Set the real date this was issued.</p>
+            </div>
             <div className="space-y-1.5"><Label>Due date</Label><Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></div>
             <div className="space-y-1.5"><Label>Tax rate (%)</Label><Input type="number" value={taxRate} onChange={(e) => setTaxRate(e.target.value)} /></div>
           </div>
@@ -419,10 +426,12 @@ export function InvoiceDetailDialog({
   const [voidReason, setVoidReason] = React.useState('')
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [openPaymentId, setOpenPaymentId] = React.useState<string | null>(null)
+  const [issueDate, setIssueDate] = React.useState('')
   const [dueDate, setDueDate] = React.useState('')
   const [discount, setDiscount] = React.useState('0')
   const [taxRate, setTaxRate] = React.useState('0')
   const [notes, setNotes] = React.useState('')
+  const [payPaidAt, setPayPaidAt] = React.useState('')
 
   const balance = inv ? Number(inv.total) - Number(inv.amount_paid) : 0
   const isDraft = inv?.status === 'draft'
@@ -430,6 +439,7 @@ export function InvoiceDetailDialog({
 
   React.useEffect(() => {
     if (inv && isDraft) {
+      setIssueDate(inv.issue_date ?? '')
       setDueDate(inv.due_date ?? '')
       setDiscount(String(inv.discount ?? 0))
       setTaxRate(String(inv.tax_rate ?? 0))
@@ -437,12 +447,16 @@ export function InvoiceDetailDialog({
     }
   }, [inv, isDraft])
 
+  React.useEffect(() => {
+    if (open) setPayPaidAt(new Date().toISOString().slice(0, 10))
+  }, [open])
+
   const saveDraftDetails = async () => {
     if (!inv) return
     try {
       await updateDraft.mutateAsync({
         id: inv.id,
-        values: { dueDate: dueDate || undefined, discount: Number(discount) || 0, taxRate: Number(taxRate) || 0, notes: notes || undefined },
+        values: { issueDate: issueDate || undefined, dueDate: dueDate || undefined, discount: Number(discount) || 0, taxRate: Number(taxRate) || 0, notes: notes || undefined },
       })
       toast.success('Invoice updated')
     } catch (err) {
@@ -473,10 +487,10 @@ export function InvoiceDetailDialog({
           method: payMethod,
           reference: payReference || undefined,
           notes: payNotes || undefined,
-          paidAt: new Date().toISOString().slice(0, 10),
+          paidAt: payPaidAt || new Date().toISOString().slice(0, 10),
         },
       })
-      setPayAmount(''); setPayMethod(''); setPayReference(''); setPayNotes('')
+      setPayAmount(''); setPayMethod(''); setPayReference(''); setPayNotes(''); setPayPaidAt(new Date().toISOString().slice(0, 10))
       setConfirmPayOpen(false)
       toast.success('Payment recorded')
     } catch (err) {
@@ -587,6 +601,7 @@ export function InvoiceDetailDialog({
 
             {isDraft && (
               <div className="grid gap-4 rounded-lg border border-border p-3 sm:grid-cols-2">
+                <div className="space-y-1.5"><Label className="text-xs">Issue date</Label><Input className="h-9" type="date" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} onBlur={saveDraftDetails} /></div>
                 <div className="space-y-1.5"><Label className="text-xs">Due date</Label><Input className="h-9" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} onBlur={saveDraftDetails} /></div>
                 <div className="space-y-1.5"><Label className="text-xs">Discount (₦)</Label><Input className="h-9" type="number" value={discount} onChange={(e) => setDiscount(e.target.value)} onBlur={saveDraftDetails} /></div>
                 <div className="space-y-1.5"><Label className="text-xs">Tax / VAT (%)</Label><Input className="h-9" type="number" value={taxRate} onChange={(e) => setTaxRate(e.target.value)} onBlur={saveDraftDetails} /></div>
@@ -649,6 +664,7 @@ export function InvoiceDetailDialog({
                       </Select>
                     </div>
                     <div className="space-y-1"><Label className="text-xs">Reference (optional)</Label><Input className="h-9 w-36" value={payReference} onChange={(e) => setPayReference(e.target.value)} /></div>
+                    <div className="space-y-1"><Label className="text-xs">Date paid</Label><Input className="h-9 w-36" type="date" value={payPaidAt} onChange={(e) => setPayPaidAt(e.target.value)} /></div>
                     <Button onClick={openPaymentConfirm}>Record payment</Button>
                   </div>
                   <Textarea rows={1} placeholder="Notes (optional)" value={payNotes} onChange={(e) => setPayNotes(e.target.value)} />

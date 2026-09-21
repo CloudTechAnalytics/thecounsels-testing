@@ -318,6 +318,7 @@ export const billingService = {
       p_matter: v.matterId || null,
       p_due_date: v.dueDate || null,
       p_tax_rate: v.taxRate,
+      p_issue_date: v.issueDate || null,
       // undefined (not passed) would fall back to the RPC's own default of
       // "sweep every unbilled item for this client/matter" — the dialog
       // always sends its own explicit selection instead, even an empty
@@ -435,6 +436,7 @@ export const billingService = {
     const { error } = await supabase
       .from('invoices')
       .update({
+        issue_date: v.issueDate || undefined,
         due_date: v.dueDate || null,
         discount: v.discount,
         tax_rate: v.taxRate,

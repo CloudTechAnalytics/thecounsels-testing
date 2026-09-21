@@ -545,6 +545,11 @@ export interface Database {
           created_by: string | null
           registration_number: string | null
           branch_id: string | null
+          occupation: string | null
+          date_of_birth: string | null
+          gender: string | null
+          identification_number: string | null
+          client_since: string
         } & Timestamps
         Insert: {
           id?: string
@@ -565,6 +570,11 @@ export interface Database {
           created_by?: string | null
           registration_number?: string | null
           branch_id?: string | null
+          occupation?: string | null
+          date_of_birth?: string | null
+          gender?: string | null
+          identification_number?: string | null
+          client_since?: string
         }
         Update: Partial<Database['public']['Tables']['clients']['Insert']>
         Relationships: [
@@ -640,6 +650,7 @@ export interface Database {
           ai_summary: string | null
           ai_summary_generated_at: string | null
           branch_id: string | null
+          case_number: string | null
         } & Timestamps
         Insert: {
           id?: string
@@ -662,6 +673,7 @@ export interface Database {
           ai_summary?: string | null
           ai_summary_generated_at?: string | null
           branch_id?: string | null
+          case_number?: string | null
         }
         Update: Partial<Database['public']['Tables']['matters']['Insert']>
         Relationships: [
@@ -2323,6 +2335,7 @@ export interface Database {
           p_time_entry_ids?: string[] | null
           p_expense_ids?: string[] | null
           p_manual_items?: Json
+          p_issue_date?: string | null
         }
         Returns: Database['public']['Tables']['invoices']['Row']
       }

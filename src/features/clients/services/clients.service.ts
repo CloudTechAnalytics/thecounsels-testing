@@ -62,6 +62,11 @@ function toRow(values: ClientFormValues) {
     status: values.status,
     notes: values.notes?.trim() || null,
     branch_id: values.branchId || null,
+    occupation: values.occupation?.trim() || null,
+    date_of_birth: values.dateOfBirth || null,
+    gender: values.gender || null,
+    identification_number: values.identificationNumber?.trim() || null,
+    client_since: values.clientSince || undefined,
   }
 }
 

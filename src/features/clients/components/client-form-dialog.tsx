@@ -26,6 +26,8 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui/select'
 import { toast } from '@/shared/components/ui/sonner'
 
+const NONE = '__none__'
+
 function toDefaults(client?: Client | null): ClientFormValues {
   return {
     type: client?.type ?? 'individual',
@@ -46,6 +48,11 @@ function toDefaults(client?: Client | null): ClientFormValues {
     status: client?.status ?? 'active',
     notes: client?.notes ?? '',
     branchId: client?.branch_id ?? '',
+    occupation: client?.occupation ?? '',
+    dateOfBirth: client?.date_of_birth ?? '',
+    gender: client?.gender ?? '',
+    identificationNumber: client?.identification_number ?? '',
+    clientSince: client?.client_since ?? '',
   }
 }
 
@@ -235,17 +242,32 @@ export function ClientFormDialog({
               />
             </div>
 
-            <FormField
-              control={form.control}
-              name="branchId"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Branch</FormLabel>
-                  <BranchPicker organizationId={activeOrgId} value={field.value ?? ''} onChange={field.onChange} mode="form" restrictToViewer />
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FormField
+                control={form.control}
+                name="branchId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Branch</FormLabel>
+                    <BranchPicker organizationId={activeOrgId} value={field.value ?? ''} onChange={field.onChange} mode="form" restrictToViewer />
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="clientSince"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Client since</FormLabel>
+                    <FormControl>
+                      <Input type="date" {...field} disabled={readOnly} />
+                    </FormControl>
+                    <p className="text-xs text-muted-foreground">Filing in an old client? Set the real date they came on.</p>
+                  </FormItem>
+                )}
+              />
+            </div>
 
             {type === 'corporate' ? (
               <div className="grid gap-4 sm:grid-cols-2">
@@ -301,6 +323,68 @@ export function ClientFormDialog({
                         <Input placeholder="Doe" {...field} />
                       </FormControl>
                       <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            )}
+
+            {type === 'individual' && (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FormField
+                  control={form.control}
+                  name="occupation"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Occupation</FormLabel>
+                      <FormControl>
+                        <Input placeholder="e.g. Business owner" {...field} />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="gender"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Gender</FormLabel>
+                      <Select value={field.value || NONE} onValueChange={(v) => field.onChange(v === NONE ? '' : v)} disabled={readOnly}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value={NONE}>Prefer not to say</SelectItem>
+                          <SelectItem value="female">Female</SelectItem>
+                          <SelectItem value="male">Male</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="dateOfBirth"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Date of birth</FormLabel>
+                      <FormControl>
+                        <Input type="date" {...field} />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="identificationNumber"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>ID number</FormLabel>
+                      <FormControl>
+                        <Input placeholder="National ID, passport, etc." {...field} />
+                      </FormControl>
                     </FormItem>
                   )}
                 />

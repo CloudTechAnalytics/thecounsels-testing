@@ -50,6 +50,9 @@ export type ManualInvoiceItemFormValues = z.infer<typeof manualInvoiceItemSchema
 export const generateInvoiceSchema = z.object({
   clientId: z.string().min(1, 'Choose a client'),
   matterId: z.string().optional(),
+  // Editable so a backfilled invoice can carry its real historical issue
+  // date instead of always defaulting to today.
+  issueDate: z.string().optional(),
   dueDate: z.string().optional(),
   taxRate: z.coerce.number().min(0).max(100),
   // null = "sweep every unbilled item for this client/matter" (legacy
@@ -78,6 +81,7 @@ export const invoiceItemSchema = z.object({
 export type InvoiceItemFormValues = z.infer<typeof invoiceItemSchema>
 
 export const updateInvoiceDraftSchema = z.object({
+  issueDate: z.string().optional(),
   dueDate: z.string().optional(),
   discount: z.coerce.number().min(0, 'Enter a discount amount'),
   taxRate: z.coerce.number().min(0).max(100),

@@ -29,10 +29,11 @@ export function LogPaymentDialog({ open, onOpenChange, onLogged }: { open: boole
   const [method, setMethod] = React.useState('')
   const [reference, setReference] = React.useState('')
   const [notes, setNotes] = React.useState('')
+  const [paidAt, setPaidAt] = React.useState('')
   const [confirmOpen, setConfirmOpen] = React.useState(false)
 
   React.useEffect(() => {
-    if (open) { setInvoiceId(''); setAmount(''); setMethod(''); setReference(''); setNotes('') }
+    if (open) { setInvoiceId(''); setAmount(''); setMethod(''); setReference(''); setNotes(''); setPaidAt(new Date().toISOString().slice(0, 10)) }
   }, [open])
 
   const payable = (invoices.data ?? []).filter((i) => PAYABLE_INVOICE_STATUSES.includes(i.status))
@@ -56,7 +57,7 @@ export function LogPaymentDialog({ open, onOpenChange, onLogged }: { open: boole
     try {
       await addPayment.mutateAsync({
         invoiceId,
-        values: { amount: Number(amount), method, reference: reference || undefined, notes: notes || undefined, paidAt: new Date().toISOString().slice(0, 10) },
+        values: { amount: Number(amount), method, reference: reference || undefined, notes: notes || undefined, paidAt: paidAt || new Date().toISOString().slice(0, 10) },
       })
       toast.success('Payment recorded')
       setConfirmOpen(false)
@@ -102,16 +103,22 @@ export function LogPaymentDialog({ open, onOpenChange, onLogged }: { open: boole
                 <Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={invoice ? String(balance) : undefined} />
               </div>
               <div className="space-y-1.5">
+                <Label>Date paid</Label>
+                <Input type="date" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} />
+              </div>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
                 <Label>Method</Label>
                 <Select value={method || NONE} onValueChange={(v) => setMethod(v === NONE ? '' : v)}>
                   <SelectTrigger><SelectValue placeholder="Method" /></SelectTrigger>
                   <SelectContent>{PAYMENT_METHODS.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Reference (optional)</Label>
-              <Input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="e.g. bank transaction ID" />
+              <div className="space-y-1.5">
+                <Label>Reference (optional)</Label>
+                <Input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="e.g. bank transaction ID" />
+              </div>
             </div>
             <div className="space-y-1.5">
               <Label>Notes (optional)</Label>

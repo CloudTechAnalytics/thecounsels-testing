@@ -113,7 +113,9 @@ export function MatterDetailPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <span className="font-mono text-xs text-muted-foreground">{matter.matter_number}</span>
+            <span className="font-mono text-xs text-muted-foreground">
+              {matter.matter_number}{matter.case_number ? ` · Case ${matter.case_number}` : ''}
+            </span>
             <MatterStatusMenu
               status={matter.status}
               disabled={!has(isClosed ? 'matters.reopen' : 'matters.update')}
@@ -174,6 +176,7 @@ export function MatterDetailPage() {
             <Card className="p-6 lg:col-span-2">
               <div className="grid gap-5 sm:grid-cols-2">
                 <Detail label="Client" value={matter.client?.display_name} />
+                <Detail label="Case number" value={matter.case_number} />
                 <Detail label="Practice area" value={matter.practice_area} />
                 <Detail
                   label="Lead Counsel"

@@ -24,6 +24,7 @@ export interface MatterFilters {
 function toRow(values: MatterFormValues) {
   return {
     title: values.title.trim(),
+    case_number: values.caseNumber?.trim() || null,
     client_id: values.clientId || null,
     practice_area: values.practiceArea || null,
     status: values.status,
@@ -35,6 +36,7 @@ function toRow(values: MatterFormValues) {
     judge: values.judge?.trim() || null,
     description: values.description?.trim() || null,
     branch_id: values.branchId || null,
+    opened_on: values.openedOn || undefined,
   }
 }
 

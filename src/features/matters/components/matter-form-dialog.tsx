@@ -44,6 +44,7 @@ function describeSaveError(err: unknown): string | undefined {
 function toDefaults(matter?: MatterRow | null): MatterFormValues {
   return {
     title: matter?.title ?? '',
+    caseNumber: matter?.case_number ?? '',
     clientId: matter?.client_id ?? '',
     practiceArea: matter?.practice_area ?? '',
     status: matter?.status ?? 'open',
@@ -55,6 +56,7 @@ function toDefaults(matter?: MatterRow | null): MatterFormValues {
     judge: matter?.judge ?? '',
     description: matter?.description ?? '',
     branchId: matter?.branch_id ?? '',
+    openedOn: matter?.opened_on ?? '',
   }
 }
 
@@ -165,19 +167,33 @@ export function MatterFormDialog({
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" noValidate>
-            <FormField
-              control={form.control}
-              name="title"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Matter title</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Acme Corp v. Zenith Holdings" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FormField
+                control={form.control}
+                name="title"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Matter title</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Acme Corp v. Zenith Holdings" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="caseNumber"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Case number</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g. FHC/L/CS/123/2026" {...field} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+            </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
               <FormField
@@ -279,17 +295,32 @@ export function MatterFormDialog({
               />
             </div>
 
-            <FormField
-              control={form.control}
-              name="branchId"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Branch</FormLabel>
-                  <BranchPicker organizationId={activeOrgId} value={field.value ?? ''} onChange={field.onChange} mode="form" restrictToViewer />
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FormField
+                control={form.control}
+                name="branchId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Branch</FormLabel>
+                    <BranchPicker organizationId={activeOrgId} value={field.value ?? ''} onChange={field.onChange} mode="form" restrictToViewer />
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="openedOn"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Date opened</FormLabel>
+                    <FormControl>
+                      <Input type="date" {...field} />
+                    </FormControl>
+                    <p className="text-xs text-muted-foreground">Filing in an old matter? Set its real opening date.</p>
+                  </FormItem>
+                )}
+              />
+            </div>
 
             {/* Filtered to the branch picked above — pick a branch first
                 and these narrow to people who actually work there (plus

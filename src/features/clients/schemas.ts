@@ -28,6 +28,14 @@ export const clientSchema = z
     status: z.enum(['active', 'inactive', 'prospect']),
     notes: z.string().optional(),
     branchId: z.string().optional(),
+    // Individual-client-only fields.
+    occupation: z.string().optional(),
+    dateOfBirth: z.string().optional(),
+    gender: z.string().optional(),
+    identificationNumber: z.string().optional(),
+    // Editable so a pre-existing client can be filed in with the real date
+    // they became a client instead of always defaulting to today.
+    clientSince: z.string().optional(),
   })
   .superRefine((val, ctx) => {
     if (val.type === 'corporate' && !val.companyName?.trim()) {

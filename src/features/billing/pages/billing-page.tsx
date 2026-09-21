@@ -167,7 +167,7 @@ export function BillingPage() {
         }
       />
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border">
+      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-border">
         <div className="flex gap-1">
           {tabs.map((t) => (
             <button
@@ -183,7 +183,9 @@ export function BillingPage() {
           ))}
         </div>
         {branchScope.canSelect && (
-          <BranchSelector options={branchScope.options} value={branchScope.selectedBranchId} onChange={branchScope.setSelectedBranchId} />
+          <div className="pb-2">
+            <BranchSelector options={branchScope.options} value={branchScope.selectedBranchId} onChange={branchScope.setSelectedBranchId} />
+          </div>
         )}
       </div>
 

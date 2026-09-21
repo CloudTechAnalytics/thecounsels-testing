@@ -7,6 +7,7 @@ import { useClients } from '@/features/clients/hooks/use-clients'
 import { useMatters } from '@/features/matters/hooks/use-matters'
 import {
   useGenerateInvoice,
+  useUnbilledForClient,
   useInvoice,
   useSetInvoiceStatus,
   useAddPayment,
@@ -16,7 +17,8 @@ import {
   useUpdateInvoiceDraft,
   useDeleteInvoice,
 } from '@/features/billing/hooks/use-billing'
-import { INVOICE_STATUS_META, isInvoiceOverdue } from '@/features/billing/types'
+import type { ManualInvoiceItemFormValues } from '@/features/billing/schemas'
+import { INVOICE_STATUS_META, MANUAL_ITEM_KINDS, INVOICE_ITEM_KIND_META, isInvoiceOverdue, timeAmount } from '@/features/billing/types'
 import { printInvoice } from '@/features/billing/lib/print-invoice'
 import { PaymentDetailDialog } from '@/features/billing/components/payment-detail-dialog'
 import { supabase } from '@/shared/lib/supabase'
@@ -43,6 +45,45 @@ import { toast } from '@/shared/components/ui/sonner'
 const NONE = '__none__'
 const PAYMENT_METHODS = ['Bank transfer', 'Card', 'Cash', 'Cheque']
 
+/** One row in the "add a Professional Fee / Retainer / Other Charge" list
+ * — local state only until Generate is clicked, same pattern the Assigned
+ * Team checklist on matter-form-dialog.tsx uses for "apply on submit,
+ * nothing exists server-side yet." */
+function ManualItemForm({ onAdd }: { onAdd: (item: ManualInvoiceItemFormValues) => void }) {
+  const [kind, setKind] = React.useState<ManualInvoiceItemFormValues['kind']>('professional_fee')
+  const [description, setDescription] = React.useState('')
+  const [amount, setAmount] = React.useState('')
+
+  const submit = () => {
+    if (!description.trim() || !Number(amount)) {
+      toast.error('Describe the charge and enter an amount')
+      return
+    }
+    onAdd({ kind, description: description.trim(), quantity: 1, rate: Number(amount) })
+    setDescription(''); setAmount('')
+  }
+
+  return (
+    <div className="flex flex-wrap items-end gap-2 rounded-lg border border-dashed border-border p-3">
+      <div className="space-y-1"><Label className="text-xs">Type</Label>
+        <Select value={kind} onValueChange={(v) => setKind(v as ManualInvoiceItemFormValues['kind'])}>
+          <SelectTrigger className="h-9 w-40"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {MANUAL_ITEM_KINDS.map((k) => <SelectItem key={k} value={k}>{INVOICE_ITEM_KIND_META[k].label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="min-w-[160px] flex-1 space-y-1"><Label className="text-xs">Description</Label>
+        <Input className="h-9" placeholder="e.g. Professional legal fee for…" value={description} onChange={(e) => setDescription(e.target.value)} />
+      </div>
+      <div className="space-y-1"><Label className="text-xs">Amount (₦)</Label>
+        <Input className="h-9 w-32" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} />
+      </div>
+      <Button type="button" size="sm" variant="outline" onClick={submit}><Plus className="h-3.5 w-3.5" /> Add</Button>
+    </div>
+  )
+}
+
 export function GenerateInvoiceDialog({
   open,
   onOpenChange,
@@ -61,19 +102,58 @@ export function GenerateInvoiceDialog({
   const [matterId, setMatterId] = React.useState('')
   const [dueDate, setDueDate] = React.useState('')
   const [taxRate, setTaxRate] = React.useState('0')
+  const [selectedTimeIds, setSelectedTimeIds] = React.useState<Set<string>>(new Set())
+  const [selectedExpenseIds, setSelectedExpenseIds] = React.useState<Set<string>>(new Set())
+  const [manualItems, setManualItems] = React.useState<ManualInvoiceItemFormValues[]>([])
+
+  const { data: unbilled, isLoading: unbilledLoading } = useUnbilledForClient(activeOrgId, clientId || null, matterId === NONE ? null : matterId || null)
 
   React.useEffect(() => {
-    if (open) { setClientId(''); setMatterId(''); setDueDate(''); setTaxRate('0') }
+    if (open) {
+      setClientId(''); setMatterId(''); setDueDate(''); setTaxRate('0')
+      setSelectedTimeIds(new Set()); setSelectedExpenseIds(new Set()); setManualItems([])
+    }
   }, [open])
+
+  // Every unbilled item pre-checked by default the moment it loads — matches
+  // the previous "sweep everything unbilled" behavior unless the firm
+  // deliberately unchecks something, so nothing that used to happen
+  // automatically now silently stops happening.
+  React.useEffect(() => {
+    if (unbilled) {
+      setSelectedTimeIds(new Set(unbilled.time.map((t) => t.id)))
+      setSelectedExpenseIds(new Set(unbilled.expenses.map((e) => e.id)))
+    }
+  }, [unbilled])
+
+  const toggleTime = (id: string) => setSelectedTimeIds((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const toggleExpense = (id: string) => setSelectedExpenseIds((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+
+  const manualTotal = manualItems.reduce((s, m) => s + m.quantity * m.rate, 0)
+  const timeTotal = (unbilled?.time ?? []).filter((t) => selectedTimeIds.has(t.id)).reduce((s, t) => s + timeAmount(t.minutes, Number(t.rate)), 0)
+  const expenseTotal = (unbilled?.expenses ?? []).filter((e) => selectedExpenseIds.has(e.id)).reduce((s, e) => s + Number(e.amount), 0)
+  const runningTotal = manualTotal + timeTotal + expenseTotal
 
   const submit = async () => {
     if (!clientId) {
       toast.error('Choose a client')
       return
     }
+    if (runningTotal <= 0) {
+      toast.error('Add at least one charge, or select some unbilled work, before generating')
+      return
+    }
     try {
-      const id = await gen.mutateAsync({ clientId, matterId: matterId === NONE ? '' : matterId, dueDate, taxRate: Number(taxRate) || 0 })
-      toast.success('Invoice generated from unbilled work')
+      const id = await gen.mutateAsync({
+        clientId,
+        matterId: matterId === NONE ? '' : matterId,
+        dueDate,
+        taxRate: Number(taxRate) || 0,
+        timeEntryIds: Array.from(selectedTimeIds),
+        expenseIds: Array.from(selectedExpenseIds),
+        manualItems,
+      })
+      toast.success('Invoice generated')
       onOpenChange(false)
       onGenerated(id)
     } catch (err) {
@@ -85,34 +165,103 @@ export function GenerateInvoiceDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Generate invoice</DialogTitle>
-          <DialogDescription>Pulls all unbilled billable time and expenses into a draft invoice.</DialogDescription>
+          <DialogDescription>
+            A fixed fee, retainer or other charge — with or without any time/expenses. Nothing here requires logged time.
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
-          <div className="space-y-1.5">
-            <Label>Client</Label>
-            <Select value={clientId || NONE} onValueChange={(v) => setClientId(v === NONE ? '' : v)}>
-              <SelectTrigger><SelectValue placeholder="Choose a client" /></SelectTrigger>
-              <SelectContent>
-                {clients?.map((c) => <SelectItem key={c.id} value={c.id}>{c.display_name}</SelectItem>)}
-              </SelectContent>
-            </Select>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label>Client<span className="text-destructive"> *</span></Label>
+              <Select value={clientId || NONE} onValueChange={(v) => { setClientId(v === NONE ? '' : v); setMatterId('') }}>
+                <SelectTrigger><SelectValue placeholder="Choose a client" /></SelectTrigger>
+                <SelectContent>
+                  {clients?.map((c) => <SelectItem key={c.id} value={c.id}>{c.display_name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Matter (optional)</Label>
+              <Select value={matterId || NONE} onValueChange={setMatterId} disabled={!clientId}>
+                <SelectTrigger><SelectValue placeholder="All of this client's matters" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>All of this client's matters</SelectItem>
+                  {clientMatters?.map((m) => <SelectItem key={m.id} value={m.id}>{m.matter_number} — {m.title}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          <div className="space-y-1.5">
-            <Label>Matter (optional — otherwise all of the client's matters)</Label>
-            <Select value={matterId || NONE} onValueChange={setMatterId}>
-              <SelectTrigger><SelectValue placeholder="All matters" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NONE}>All matters</SelectItem>
-                {clientMatters?.map((m) => <SelectItem key={m.id} value={m.id}>{m.matter_number} — {m.title}</SelectItem>)}
-              </SelectContent>
-            </Select>
+
+          <div className="space-y-2">
+            <Label>Professional Fee / Retainer / Other Charge</Label>
+            <ManualItemForm onAdd={(item) => setManualItems((s) => [...s, item])} />
+            {manualItems.length > 0 && (
+              <div className="space-y-1.5 rounded-lg border border-border p-2">
+                {manualItems.map((m, i) => (
+                  <div key={i} className="flex items-center justify-between gap-2 text-sm">
+                    <span className="min-w-0 truncate">
+                      <span className="text-xs text-muted-foreground">{INVOICE_ITEM_KIND_META[m.kind].label} · </span>
+                      {m.description}
+                    </span>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span className="font-medium">{formatNaira(m.quantity * m.rate)}</span>
+                      <button type="button" className="text-muted-foreground hover:text-destructive" onClick={() => setManualItems((s) => s.filter((_, idx) => idx !== i))} aria-label="Remove">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
+
+          {clientId && (
+            <div className="space-y-2">
+              <Label>Unbilled work {unbilled ? `(${(unbilled.time.length + unbilled.expenses.length)} available)` : ''}</Label>
+              {unbilledLoading ? (
+                <Skeleton className="h-16 w-full" />
+              ) : unbilled && (unbilled.time.length > 0 || unbilled.expenses.length > 0) ? (
+                <div className="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-border p-2">
+                  {unbilled.time.map((t) => (
+                    <label key={t.id} className="flex cursor-pointer items-center justify-between gap-2 rounded-md px-1.5 py-1 text-sm hover:bg-muted/50">
+                      <span className="flex min-w-0 items-center gap-2">
+                        <input type="checkbox" className="h-4 w-4 shrink-0 accent-primary" checked={selectedTimeIds.has(t.id)} onChange={() => toggleTime(t.id)} />
+                        <span className="min-w-0 truncate">
+                          <span className="text-xs text-muted-foreground">Time · </span>{t.description}
+                        </span>
+                      </span>
+                      <span className="shrink-0 font-medium">{formatNaira(timeAmount(t.minutes, Number(t.rate)))}</span>
+                    </label>
+                  ))}
+                  {unbilled.expenses.map((e) => (
+                    <label key={e.id} className="flex cursor-pointer items-center justify-between gap-2 rounded-md px-1.5 py-1 text-sm hover:bg-muted/50">
+                      <span className="flex min-w-0 items-center gap-2">
+                        <input type="checkbox" className="h-4 w-4 shrink-0 accent-primary" checked={selectedExpenseIds.has(e.id)} onChange={() => toggleExpense(e.id)} />
+                        <span className="min-w-0 truncate">
+                          <span className="text-xs text-muted-foreground">Expense · </span>{e.description}
+                        </span>
+                      </span>
+                      <span className="shrink-0 font-medium">{formatNaira(Number(e.amount))}</span>
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">No unbilled time or expenses for this client/matter.</p>
+              )}
+            </div>
+          )}
+
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5"><Label>Due date</Label><Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></div>
             <div className="space-y-1.5"><Label>Tax rate (%)</Label><Input type="number" value={taxRate} onChange={(e) => setTaxRate(e.target.value)} /></div>
+          </div>
+
+          <div className="flex justify-between rounded-lg bg-muted/40 px-3 py-2 text-sm font-medium">
+            <span>Invoice total (before tax)</span>
+            <span>{formatNaira(runningTotal)}</span>
           </div>
         </div>
         <DialogFooter>

@@ -265,7 +265,13 @@ export const mattersService = {
 
     const hearingRows = hearings.data ?? []
     const taskRows = tasks.data ?? []
-    const invoiceRows = (invoices.data ?? []).filter((i) => i.status !== 'void')
+    // Excludes both void AND draft — a real, previously-inconsistent gap
+    // found while auditing billing (draft invoices were counting toward
+    // this matter's "Invoiced"/"Outstanding"/"Amount paid" figures, the
+    // same bug class that caused the Billing dashboard's own Revenue MTD
+    // to read ₦1M off two unsent drafts). Matches billing.service.ts's
+    // getStats()/getClientFinancialSummary() "issued invoices only" rule.
+    const invoiceRows = (invoices.data ?? []).filter((i) => i.status !== 'void' && i.status !== 'draft')
     const timeRows = time.data ?? []
     const expenseRows = expenses.data ?? []
 

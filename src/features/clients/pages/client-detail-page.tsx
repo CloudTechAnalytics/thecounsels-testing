@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { format, formatDistanceToNow } from 'date-fns'
 import {
   ArrowLeft, Pencil, Trash2, Building2, User, LayoutGrid, Briefcase, Receipt, FileText, Contact,
-  AlertTriangle, CheckSquare, Gavel, Activity as ActivityIcon, PencilLine, Mail,
+  AlertTriangle, CheckSquare, Gavel, Activity as ActivityIcon, PencilLine, Mail, Banknote, CircleDollarSign,
 } from 'lucide-react'
 import { useAuth } from '@/features/auth/context/auth-provider'
 import { usePermissions } from '@/features/auth/hooks/use-permissions'
@@ -21,6 +21,7 @@ import {
   useClientMatterCount,
 } from '@/features/clients/hooks/use-clients'
 import { useMatters } from '@/features/matters/hooks/use-matters'
+import { useClientFinancialSummary } from '@/features/billing/hooks/use-billing'
 import { ClientFormDialog } from '@/features/clients/components/client-form-dialog'
 import { ManageContactsDialog } from '@/features/clients/components/manage-contacts-dialog'
 import { CommunicationsPanel } from '@/features/clients/components/communications-panel'
@@ -30,6 +31,7 @@ import { INVOICE_STATUS_META } from '@/features/billing/types'
 import { TASK_STATUS_META, TASK_PRIORITY_META } from '@/features/tasks/types'
 import { HEARING_STATUS_META } from '@/features/hearings/types'
 import { Card } from '@/shared/components/ui/card'
+import { StatTile } from '@/features/dashboard/components/stat-tile'
 import { Badge, type BadgeProps } from '@/shared/components/ui/badge'
 import { Button } from '@/shared/components/ui/button'
 import { Skeleton } from '@/shared/components/ui/skeleton'
@@ -81,6 +83,7 @@ export function ClientDetailPage() {
   const { data: contacts } = useClientContacts(id)
   const { data: invoices } = useClientInvoices(id)
   const { data: payments } = useClientPayments(id)
+  const { data: financials } = useClientFinancialSummary(has('reports.financial') ? activeOrgId : null, id ?? null)
   const { data: documents } = useClientDocuments(id)
   const { data: tasks } = useClientTasks(id)
   const { data: hearings } = useClientHearings(id)
@@ -284,6 +287,17 @@ export function ClientDetailPage() {
         )}
 
         {tab === 'billing' && (
+          <div className="space-y-6">
+            {/* §19 — reconciled from the same invoice/payment rows the
+             * lists below render, not a separately-tracked total. */}
+            {has('reports.financial') && financials && (
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                <StatTile label="Total invoiced" value={formatNaira(financials.totalInvoiced)} icon={FileText} />
+                <StatTile label="Total paid" value={formatNaira(financials.totalPaid)} icon={CircleDollarSign} />
+                <StatTile label="Outstanding" value={formatNaira(financials.outstanding)} icon={Banknote} />
+                <StatTile label="Overdue invoices" value={String(financials.overdueCount)} icon={AlertTriangle} />
+              </div>
+            )}
           <div className="grid gap-6 lg:grid-cols-2">
             <Card className="overflow-hidden">
               <p className="border-b border-border p-4 font-display text-sm font-semibold">Invoices</p>
@@ -346,6 +360,7 @@ export function ClientDetailPage() {
                 </div>
               )}
             </Card>
+          </div>
           </div>
         )}
 

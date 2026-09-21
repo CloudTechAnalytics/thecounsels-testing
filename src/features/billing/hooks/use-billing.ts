@@ -11,8 +11,36 @@ import type {
 import type { InvoiceStatus } from '@/shared/types/database.types'
 import { useInvalidateStorageUsage } from '@/shared/hooks/use-storage-quota'
 
-export function useBillingStats(orgId: string | null) {
-  return useQuery({ queryKey: ['billing', orgId, 'stats'], enabled: Boolean(orgId), queryFn: () => billingService.getStats(orgId!) })
+export function useBillingStats(orgId: string | null, branchId?: string | null) {
+  return useQuery({
+    queryKey: ['billing', orgId, 'stats', branchId ?? 'all'],
+    enabled: Boolean(orgId),
+    queryFn: () => billingService.getStats(orgId!, branchId),
+  })
+}
+/** The Generate Invoice picker's own list — unbilled billable time/expenses
+ * for one client (optionally one matter), not the paginated/filtered
+ * listTimeEntries/listExpenses used by their own tabs. */
+export function useUnbilledForClient(orgId: string | null, clientId: string | null, matterId?: string | null) {
+  return useQuery({
+    queryKey: ['billing', orgId, 'unbilled-for-client', clientId, matterId ?? 'all'],
+    enabled: Boolean(orgId && clientId),
+    queryFn: () => billingService.listUnbilledForClient(orgId!, clientId!, matterId),
+  })
+}
+export function useClientFinancialSummary(orgId: string | null, clientId: string | null) {
+  return useQuery({
+    queryKey: ['billing', orgId, 'client-summary', clientId],
+    enabled: Boolean(orgId && clientId),
+    queryFn: () => billingService.getClientFinancialSummary(orgId!, clientId!),
+  })
+}
+export function useMatterFinancialSummary(orgId: string | null, matterId: string | null) {
+  return useQuery({
+    queryKey: ['billing', orgId, 'matter-summary', matterId],
+    enabled: Boolean(orgId && matterId),
+    queryFn: () => billingService.getMatterFinancialSummary(orgId!, matterId!),
+  })
 }
 export function usePersonalStats(orgId: string | null, userId: string | null) {
   return useQuery({

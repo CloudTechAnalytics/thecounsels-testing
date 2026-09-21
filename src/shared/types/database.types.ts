@@ -2320,6 +2320,9 @@ export interface Database {
           p_matter?: string | null
           p_due_date?: string | null
           p_tax_rate?: number
+          p_time_entry_ids?: string[] | null
+          p_expense_ids?: string[] | null
+          p_manual_items?: Json
         }
         Returns: Database['public']['Tables']['invoices']['Row']
       }

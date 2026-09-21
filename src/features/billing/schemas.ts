@@ -33,11 +33,30 @@ export const expenseSchema = z
   })
 export type ExpenseFormValues = z.infer<typeof expenseSchema>
 
+export const manualInvoiceItemSchema = z.object({
+  kind: z.enum(['professional_fee', 'retainer', 'other']),
+  description: z.string().min(2, 'Describe this charge'),
+  quantity: z.coerce.number().positive('Enter a quantity').default(1),
+  unit: z.string().optional(),
+  rate: z.coerce.number().min(0, 'Enter an amount'),
+})
+export type ManualInvoiceItemFormValues = z.infer<typeof manualInvoiceItemSchema>
+
+// clientId is the only hard requirement — an invoice can be generated with
+// zero swept time/expenses and zero manual lines is allowed by the schema
+// (an empty draft, same as today); the RPC's own "at least one item to
+// Mark Sent" guard (0045) is still the real, server-side enforcement of
+// "an invoice needs SOMETHING on it before it goes out."
 export const generateInvoiceSchema = z.object({
   clientId: z.string().min(1, 'Choose a client'),
   matterId: z.string().optional(),
   dueDate: z.string().optional(),
   taxRate: z.coerce.number().min(0).max(100),
+  // null = "sweep every unbilled item for this client/matter" (legacy
+  // behavior); an array (including empty) = "invoice exactly these."
+  timeEntryIds: z.array(z.string()).nullable().default(null),
+  expenseIds: z.array(z.string()).nullable().default(null),
+  manualItems: z.array(manualInvoiceItemSchema).default([]),
 })
 export type GenerateInvoiceFormValues = z.infer<typeof generateInvoiceSchema>
 

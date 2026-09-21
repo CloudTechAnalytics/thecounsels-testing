@@ -5,9 +5,11 @@ import { formatStorage } from '@/shared/lib/format'
 import {
   timeAmount,
   type BillingStats,
+  type ClientFinancialSummary,
   type ExpenseRow,
   type InvoiceDetail,
   type InvoiceRow,
+  type MatterFinancialSummary,
   type PaymentRow,
   type PersonalStats,
   type TimeEntryRow,
@@ -316,9 +318,44 @@ export const billingService = {
       p_matter: v.matterId || null,
       p_due_date: v.dueDate || null,
       p_tax_rate: v.taxRate,
+      // undefined (not passed) would fall back to the RPC's own default of
+      // "sweep every unbilled item for this client/matter" — the dialog
+      // always sends its own explicit selection instead, even an empty
+      // array, so "generate a fixed-fee invoice with nothing swept in" is
+      // a real, reachable choice, not just what happens to be true today.
+      p_time_entry_ids: v.timeEntryIds,
+      p_expense_ids: v.expenseIds,
+      p_manual_items: v.manualItems.map((m) => ({
+        kind: m.kind,
+        description: m.description,
+        quantity: m.quantity,
+        unit: m.unit || null,
+        rate: m.rate,
+        amount: m.quantity * m.rate,
+      })),
     })
     if (error) throw error
     return (data as { id: string }).id
+  },
+  /** Unbilled billable time/expenses for a specific client (optionally
+   * narrowed to one matter) — the picker Generate Invoice shows so a firm
+   * chooses what goes on an invoice instead of everything unbilled being
+   * swept in blind. */
+  async listUnbilledForClient(organizationId: string, clientId: string, matterId?: string | null): Promise<{ time: TimeEntryRow[]; expenses: ExpenseRow[] }> {
+    const { data: matterRows, error: mErr } = matterId
+      ? { data: [{ id: matterId }], error: null }
+      : await supabase.from('matters').select('id').eq('organization_id', organizationId).eq('client_id', clientId)
+    if (mErr) throw mErr
+    const matterIds = (matterRows ?? []).map((m) => m.id)
+    if (matterIds.length === 0) return { time: [], expenses: [] }
+
+    const [time, exp] = await Promise.all([
+      supabase.from('time_entries').select(TIME_SELECT).eq('organization_id', organizationId).eq('billable', true).eq('invoiced', false).in('matter_id', matterIds).order('work_date', { ascending: false }),
+      supabase.from('expenses').select(EXP_SELECT).eq('organization_id', organizationId).eq('billable', true).eq('invoiced', false).in('matter_id', matterIds).order('expense_date', { ascending: false }),
+    ])
+    if (time.error) throw time.error
+    if (exp.error) throw exp.error
+    return { time: (time.data ?? []) as unknown as TimeEntryRow[], expenses: (exp.data ?? []) as unknown as ExpenseRow[] }
   },
   async setInvoiceStatus(id: string, status: InvoiceStatus, organizationId: string, voidReason?: string): Promise<void> {
     const { error } = await supabase
@@ -416,6 +453,22 @@ export const billingService = {
 
   // Payments ------------------------------------------------------------------
   async addPayment(organizationId: string, invoiceId: string, v: PaymentFormValues, userId: string | null): Promise<void> {
+    // Friendly pre-check ahead of the DB's own unique index (uq_payments_
+    // invoice_reference, 0169) — that index is the real, race-safe
+    // guarantee; this just turns a raw 23505 constraint violation into a
+    // clear message before the round-trip even happens, for the common case.
+    if (v.reference?.trim()) {
+      const { data: existing, error: checkErr } = await supabase
+        .from('payments')
+        .select('id, payment_number')
+        .eq('invoice_id', invoiceId)
+        .eq('reference', v.reference.trim())
+        .maybeSingle()
+      if (checkErr) throw checkErr
+      if (existing) {
+        throw new Error(`Reference "${v.reference.trim()}" was already used for payment ${existing.payment_number} on this invoice.`)
+      }
+    }
     const { data, error } = await supabase
       .from('payments')
       .insert({
@@ -423,14 +476,21 @@ export const billingService = {
         invoice_id: invoiceId,
         amount: v.amount,
         method: v.method || null,
-        reference: v.reference || null,
+        reference: v.reference?.trim() || null,
         notes: v.notes || null,
         paid_at: v.paidAt,
         created_by: userId,
       })
       .select('id, payment_number, receipt_number')
       .single()
-    if (error) throw error
+    if (error) {
+      // Race-condition backstop — two people submitting the same reference
+      // at the same instant would both pass the pre-check above.
+      if (error.code === '23505' && error.message.includes('reference')) {
+        throw new Error('This payment reference has already been used for this invoice.')
+      }
+      throw error
+    }
     await supabase.rpc('log_audit', {
       p_org: organizationId,
       p_action: 'payment.recorded',
@@ -490,24 +550,55 @@ export const billingService = {
   },
 
   // Dashboard -----------------------------------------------------------------
-  async getStats(organizationId: string): Promise<BillingStats> {
+  /** branchId, when given, scopes every figure to matters in that branch —
+   * time entries/expenses/invoices/payments all reach their branch only
+   * through matter_id, so a matter-less record (no matter attached at all)
+   * is necessarily excluded from a specific-branch view; it still counts
+   * under "All branches" (branchId omitted). Resolving matterIds first,
+   * then filtering each query by it, mirrors the existing clientId-scoping
+   * pattern in listTimeEntries above — no new SQL function needed for this. */
+  async getStats(organizationId: string, branchId?: string | null): Promise<BillingStats> {
     const monthStart = new Date()
     monthStart.setDate(1)
     monthStart.setHours(0, 0, 0, 0)
     const monthStartStr = monthStart.toISOString().slice(0, 10)
 
-    const [time, exp, inv, pay] = await Promise.all([
-      supabase.from('time_entries').select('minutes, rate, billable, invoiced, work_date').eq('organization_id', organizationId),
-      supabase.from('expenses').select('amount, billable, invoiced').eq('organization_id', organizationId),
-      supabase.from('invoices').select('total, amount_paid, status, issue_date, due_date').eq('organization_id', organizationId),
-      supabase.from('payments').select('amount, paid_at').eq('organization_id', organizationId).gte('paid_at', monthStartStr),
-    ])
+    let branchMatterIds: string[] | null = null
+    if (branchId) {
+      const { data, error } = await supabase.from('matters').select('id').eq('organization_id', organizationId).eq('branch_id', branchId)
+      if (error) throw error
+      branchMatterIds = (data ?? []).map((m) => m.id)
+      if (branchMatterIds.length === 0) {
+        return {
+          unbilledValue: 0, invoiced: 0, collected: 0, outstanding: 0, billableHoursMTD: 0,
+          revenueMTD: 0, paymentsReceivedMTD: 0, unpaidInvoicesCount: 0, overdueCount: 0,
+        }
+      }
+    }
+
+    let timeQ = supabase.from('time_entries').select('minutes, rate, billable, invoiced, work_date').eq('organization_id', organizationId)
+    let expQ = supabase.from('expenses').select('amount, billable, invoiced').eq('organization_id', organizationId)
+    let invQ = supabase.from('invoices').select('id, total, amount_paid, status, issue_date, due_date').eq('organization_id', organizationId)
+    if (branchMatterIds) {
+      timeQ = timeQ.in('matter_id', branchMatterIds)
+      expQ = expQ.in('matter_id', branchMatterIds)
+      invQ = invQ.in('matter_id', branchMatterIds)
+    }
+
+    const [time, exp, inv] = await Promise.all([timeQ, expQ, invQ])
 
     const timeRows = time.data ?? []
     const expRows = exp.data ?? []
     const invRows = inv.data ?? []
-    const payRows = pay.data ?? []
     const todayStr = new Date().toISOString().slice(0, 10)
+
+    // Payments are scoped by invoice, not matter directly — filter by the
+    // same branch-scoped invoice set above rather than a second matter join.
+    let payQ = supabase.from('payments').select('amount, paid_at, invoice_id').eq('organization_id', organizationId).gte('paid_at', monthStartStr)
+    if (branchMatterIds) payQ = payQ.in('invoice_id', invRows.map((i) => i.id))
+    const { data: payData, error: payErr } = await payQ
+    if (payErr) throw payErr
+    const payRows = payData ?? []
 
     const unbilledTime = timeRows.filter((t) => t.billable && !t.invoiced).reduce((s, t) => s + timeAmount(t.minutes, Number(t.rate)), 0)
     const unbilledExp = expRows.filter((e) => e.billable && !e.invoiced).reduce((s, e) => s + Number(e.amount), 0)
@@ -515,8 +606,14 @@ export const billingService = {
     const invoiced = nonVoid.reduce((s, i) => s + Number(i.total), 0)
     const collected = nonVoid.reduce((s, i) => s + Number(i.amount_paid), 0)
     const billableMinutesMTD = timeRows.filter((t) => t.billable && t.work_date >= monthStartStr).reduce((s, t) => s + t.minutes, 0)
-    const revenueMTD = invRows.filter((i) => i.status !== 'void' && i.issue_date >= monthStartStr).reduce((s, i) => s + Number(i.total), 0)
+    // Revenue = actual money received, not invoice totals — must reconcile
+    // with Payments Received MTD by construction (same source query), not
+    // just by coincidence. This was the real bug: the old version summed
+    // invoice.total for anything issued this month, INCLUDING drafts
+    // (status !== 'void' let drafts through), which is how two ₦500,000
+    // draft invoices turned into a ₦1M "Revenue" with zero actual payments.
     const paymentsReceivedMTD = payRows.reduce((s, p) => s + Number(p.amount), 0)
+    const revenueMTD = paymentsReceivedMTD
     const unpaid = invRows.filter((i) => i.status === 'sent' || i.status === 'partial')
 
     return {
@@ -574,5 +671,67 @@ export const billingService = {
       expensesMTD,
       openTasks: tasks.count ?? 0,
     }
+  },
+
+  // Financial summaries ---------------------------------------------------------
+  /** §19 — Total Invoiced/Paid/Outstanding/Overdue for one client, reconciled
+   * from the same invoice rows the numbers are derived from (never a
+   * separately-maintained total that could drift). Draft/void invoices are
+   * excluded from Invoiced, same "issued only" rule getStats() uses. */
+  async getClientFinancialSummary(organizationId: string, clientId: string): Promise<ClientFinancialSummary> {
+    const { data: invRows, error: invErr } = await supabase
+      .from('invoices')
+      .select(INV_SELECT)
+      .eq('organization_id', organizationId)
+      .eq('client_id', clientId)
+      .order('created_at', { ascending: false })
+    if (invErr) throw invErr
+    const invoices = (invRows ?? []) as unknown as InvoiceRow[]
+    const nonVoid = invoices.filter((i) => i.status !== 'void' && i.status !== 'draft')
+    const todayStr = new Date().toISOString().slice(0, 10)
+
+    const { data: payRows, error: payErr } = await supabase
+      .from('payments')
+      .select(PAYMENT_SELECT)
+      .eq('organization_id', organizationId)
+      .eq('client_id', clientId)
+      .order('paid_at', { ascending: false })
+      .limit(10)
+    if (payErr) throw payErr
+
+    const totalInvoiced = nonVoid.reduce((s, i) => s + Number(i.total), 0)
+    const totalPaid = nonVoid.reduce((s, i) => s + Number(i.amount_paid), 0)
+
+    return {
+      totalInvoiced,
+      totalPaid,
+      outstanding: totalInvoiced - totalPaid,
+      overdueCount: nonVoid.filter((i) => (i.status === 'sent' || i.status === 'partial') && i.due_date && i.due_date < todayStr).length,
+      recentInvoices: invoices.slice(0, 10),
+      recentPayments: (payRows ?? []) as unknown as PaymentRow[],
+    }
+  },
+
+  /** §20 — same reconciliation, scoped to one matter instead of a whole client. */
+  async getMatterFinancialSummary(organizationId: string, matterId: string): Promise<MatterFinancialSummary> {
+    const [invRes, expRes, timeRes] = await Promise.all([
+      supabase.from('invoices').select('total, amount_paid, status').eq('organization_id', organizationId).eq('matter_id', matterId),
+      supabase.from('expenses').select('amount, billable, invoiced').eq('organization_id', organizationId).eq('matter_id', matterId),
+      supabase.from('time_entries').select('minutes, rate, billable, invoiced').eq('organization_id', organizationId).eq('matter_id', matterId),
+    ])
+    if (invRes.error) throw invRes.error
+    if (expRes.error) throw expRes.error
+    if (timeRes.error) throw timeRes.error
+
+    const nonVoid = (invRes.data ?? []).filter((i) => i.status !== 'void' && i.status !== 'draft')
+    const invoiced = nonVoid.reduce((s, i) => s + Number(i.total), 0)
+    const collected = nonVoid.reduce((s, i) => s + Number(i.amount_paid), 0)
+    const expenses = (expRes.data ?? []).reduce((s, e) => s + Number(e.amount), 0)
+    const unbilledExpenses = (expRes.data ?? []).filter((e) => e.billable && !e.invoiced).reduce((s, e) => s + Number(e.amount), 0)
+    const unbilledTime = (timeRes.data ?? [])
+      .filter((t) => t.billable && !t.invoiced)
+      .reduce((s, t) => s + timeAmount(t.minutes, Number(t.rate)), 0)
+
+    return { invoiced, collected, outstanding: invoiced - collected, expenses, unbilledTime, unbilledExpenses }
   },
 }

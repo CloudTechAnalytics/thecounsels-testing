@@ -62,6 +62,38 @@ export interface PersonalStats {
   openTasks: number
 }
 
+export interface ClientFinancialSummary {
+  totalInvoiced: number
+  totalPaid: number
+  outstanding: number
+  overdueCount: number
+  recentInvoices: InvoiceRow[]
+  recentPayments: PaymentRow[]
+}
+
+export interface MatterFinancialSummary {
+  invoiced: number
+  collected: number
+  outstanding: number
+  expenses: number
+  unbilledTime: number
+  unbilledExpenses: number
+}
+
+/** Professional Fee / Retainer / Time / Expense / Other Charge — invoice_items.kind
+ * is a plain text column (0016), never a checked enum, so new kinds like these need
+ * no schema change; only labels/ordering for the UI live here. */
+export const INVOICE_ITEM_KIND_META: Record<string, { label: string }> = {
+  professional_fee: { label: 'Professional Fee' },
+  retainer: { label: 'Retainer' },
+  time: { label: 'Time' },
+  expense: { label: 'Expense' },
+  other: { label: 'Other Charge' },
+  manual: { label: 'Other Charge' },
+}
+export const MANUAL_ITEM_KINDS = ['professional_fee', 'retainer', 'other'] as const
+export type ManualItemKind = (typeof MANUAL_ITEM_KINDS)[number]
+
 export const INVOICE_STATUS_META: Record<InvoiceStatus, { label: string; variant: BadgeProps['variant'] }> = {
   draft: { label: 'Draft', variant: 'muted' },
   sent: { label: 'Sent', variant: 'warning' },

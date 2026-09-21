@@ -31,8 +31,11 @@ import { TimeEntryDialog, ExpenseDialog } from '@/features/billing/components/lo
 import { TimeEntriesTab } from '@/features/billing/components/time-entries-tab'
 import { PaymentsTab } from '@/features/billing/components/payments-tab'
 import { GenerateInvoiceDialog, InvoiceDetailDialog } from '@/features/billing/components/invoice-dialogs'
+import { LogPaymentDialog } from '@/features/billing/components/log-payment-dialog'
 import { EXPENSE_CATEGORIES, INVOICE_STATUS_META, isInvoiceOverdue, type ExpenseRow, type InvoiceRow } from '@/features/billing/types'
 import { StatTile } from '@/features/dashboard/components/stat-tile'
+import { BranchSelector } from '@/features/dashboard/components/branch-selector'
+import { useBranchScope } from '@/features/dashboard/hooks/use-branch-scope'
 import { PageHeader } from '@/shared/components/page-header'
 import { ExportButton } from '@/shared/components/export-button'
 import { Card } from '@/shared/components/ui/card'
@@ -53,47 +56,42 @@ import { formatNaira, formatMoneyCompact } from '@/shared/lib/format'
 import { cn } from '@/shared/lib/utils'
 import { toast } from '@/shared/components/ui/sonner'
 
-export function BillingPage() {
-  const { activeOrgId, userId } = useAuth()
-  const { has } = usePermissions()
-  const canFinancials = has('reports.financial')
-  const canInvoice = has('invoices.manage')
-  // Firm-wide financials are restricted; everyone else gets their own numbers.
-  const stats = useBillingStats(canFinancials ? activeOrgId : null)
-  const personal = usePersonalStats(canFinancials ? null : activeOrgId, userId)
-  const invoices = useInvoices(activeOrgId)
-  const [tab, setTab] = React.useState<'time' | 'expenses' | 'invoices' | 'payments'>('time')
-
-  const [timeOpen, setTimeOpen] = React.useState(false)
-  const [expenseOpen, setExpenseOpen] = React.useState(false)
-  const [genOpen, setGenOpen] = React.useState(false)
-  const [invoiceId, setInvoiceId] = React.useState<string | null>(null)
-
+function OverviewTab({
+  canFinancials,
+  stats,
+  personal,
+  invoices,
+  branchScope,
+  onOpenInvoice,
+}: {
+  canFinancials: boolean
+  stats: ReturnType<typeof useBillingStats>
+  personal: ReturnType<typeof usePersonalStats>
+  invoices: InvoiceRow[]
+  branchScope: ReturnType<typeof useBranchScope>
+  onOpenInvoice: (id: string) => void
+}) {
   const s = stats.data
   const p = personal.data
-
-  const tabs = (canInvoice ? (['time', 'expenses', 'invoices', 'payments'] as const) : (['time', 'expenses'] as const))
+  // Quick "what needs attention" lists — same data the Invoices tab already
+  // has, just the unpaid/overdue subset surfaced here so Overview earns
+  // its name instead of only showing totals.
+  const unpaid = invoices.filter((i) => i.status === 'sent' || i.status === 'partial').slice(0, 5)
 
   return (
-    <div>
-      <PageHeader
-        title="Billing"
-        description="Time, expenses, invoices and payments."
-        actions={
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => setTimeOpen(true)}><Plus /> Log time</Button>
-            <Button variant="outline" onClick={() => setExpenseOpen(true)}><Plus /> Log expense</Button>
-            {canInvoice && <Button onClick={() => setGenOpen(true)}><Receipt className="h-4 w-4" /> Generate invoice</Button>}
-          </div>
-        }
-      />
+    <div className="space-y-6">
+      {branchScope.canSelect && (
+        <div className="flex justify-end">
+          <BranchSelector options={branchScope.options} value={branchScope.selectedBranchId} onChange={branchScope.setSelectedBranchId} />
+        </div>
+      )}
 
       {canFinancials ? (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-          <StatTile label="Revenue (MTD)" value={s ? formatMoneyCompact(s.revenueMTD) : '—'} icon={Banknote} />
+          <StatTile label="Revenue (MTD)" value={s ? formatMoneyCompact(s.revenueMTD) : '—'} hint="Actual payments received this month" icon={Banknote} />
           <StatTile label="Billable hours (MTD)" value={s ? `${s.billableHoursMTD}h` : '—'} icon={Clock} />
           <StatTile label="Unbilled (WIP)" value={s ? formatMoneyCompact(s.unbilledValue) : '—'} icon={Wallet} />
-          <StatTile label="Invoiced" value={s ? formatMoneyCompact(s.invoiced) : '—'} icon={FileText} />
+          <StatTile label="Invoiced" value={s ? formatMoneyCompact(s.invoiced) : '—'} hint="Issued invoices, drafts excluded" icon={FileText} />
           <StatTile label="Collected" value={s ? formatMoneyCompact(s.collected) : '—'} icon={CircleDollarSign} />
           <StatTile label="Outstanding" value={s ? formatMoneyCompact(s.outstanding) : '—'} icon={AlertTriangle} />
           <StatTile label="Payments received (MTD)" value={s ? formatMoneyCompact(s.paymentsReceivedMTD) : '—'} icon={CircleDollarSign} />
@@ -108,22 +106,101 @@ export function BillingPage() {
         </div>
       )}
 
-      <div className="mt-6 flex gap-1 border-b border-border">
+      {canFinancials && unpaid.length > 0 && (
+        <Card className="overflow-hidden">
+          <div className="border-b border-border px-4 py-3">
+            <p className="text-sm font-semibold">Needs attention — unpaid invoices</p>
+          </div>
+          <div className="divide-y divide-border/70">
+            {unpaid.map((inv) => (
+              <button
+                key={inv.id}
+                type="button"
+                onClick={() => onOpenInvoice(inv.id)}
+                className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left text-sm hover:bg-muted/40"
+              >
+                <span className="min-w-0 truncate">
+                  <span className="font-mono text-xs text-muted-foreground">{inv.invoice_number}</span> · {inv.client?.display_name ?? '—'}
+                </span>
+                <span className="flex shrink-0 items-center gap-2">
+                  <span className="font-medium">{formatNaira(Number(inv.total) - Number(inv.amount_paid))}</span>
+                  <Badge variant={INVOICE_STATUS_META[inv.status].variant}>{INVOICE_STATUS_META[inv.status].label}</Badge>
+                  {isInvoiceOverdue(inv) && <Badge variant="destructive">Overdue</Badge>}
+                </span>
+              </button>
+            ))}
+          </div>
+        </Card>
+      )}
+    </div>
+  )
+}
+
+export function BillingPage() {
+  const { activeOrgId, userId } = useAuth()
+  const { has } = usePermissions()
+  const canFinancials = has('reports.financial')
+  const canInvoice = has('invoices.manage')
+  const branchScope = useBranchScope()
+  // Firm-wide financials are restricted; everyone else gets their own numbers.
+  const stats = useBillingStats(canFinancials ? activeOrgId : null, branchScope.selectedBranchId || null)
+  const personal = usePersonalStats(canFinancials ? null : activeOrgId, userId)
+  const invoices = useInvoices(activeOrgId)
+  const [tab, setTab] = React.useState<'overview' | 'invoices' | 'payments' | 'expenses' | 'time'>('overview')
+
+  const [timeOpen, setTimeOpen] = React.useState(false)
+  const [expenseOpen, setExpenseOpen] = React.useState(false)
+  const [genOpen, setGenOpen] = React.useState(false)
+  const [payOpen, setPayOpen] = React.useState(false)
+  const [invoiceId, setInvoiceId] = React.useState<string | null>(null)
+
+  // Invoicing and collections are the core financial workflow now — this
+  // just reorders which tabs render first and which action reads as
+  // primary; every existing tab/dialog underneath is untouched.
+  const tabs = (canInvoice ? (['overview', 'invoices', 'payments', 'expenses', 'time'] as const) : (['overview', 'expenses', 'time'] as const))
+  const TAB_LABEL: Record<(typeof tabs)[number], string> = { overview: 'Overview', invoices: 'Invoices', payments: 'Payments', expenses: 'Expenses', time: 'Time entries' }
+
+  return (
+    <div>
+      <PageHeader
+        title="Billing"
+        description="Invoicing, payments, time and expenses."
+        actions={
+          <div className="flex flex-wrap gap-2">
+            {canInvoice && <Button onClick={() => setGenOpen(true)}><Receipt className="h-4 w-4" /> Generate invoice</Button>}
+            {canInvoice && <Button variant="outline" onClick={() => setPayOpen(true)}><Plus /> Log payment</Button>}
+            <Button variant="outline" onClick={() => setExpenseOpen(true)}><Plus /> Log expense</Button>
+            <Button variant="outline" onClick={() => setTimeOpen(true)}><Plus /> Log time</Button>
+          </div>
+        }
+      />
+
+      <div className="flex gap-1 border-b border-border">
         {tabs.map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
             className={cn(
-              'border-b-2 px-4 py-2.5 text-sm font-medium transition-colors capitalize',
+              'border-b-2 px-4 py-2.5 text-sm font-medium transition-colors',
               tab === t ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground',
             )}
           >
-            {t === 'time' ? 'Time entries' : t}
+            {TAB_LABEL[t]}
           </button>
         ))}
       </div>
 
       <div className="mt-6">
+        {tab === 'overview' && (
+          <OverviewTab
+            canFinancials={canFinancials}
+            stats={stats}
+            personal={personal}
+            invoices={invoices.data ?? []}
+            branchScope={branchScope}
+            onOpenInvoice={setInvoiceId}
+          />
+        )}
         {tab === 'time' && <TimeEntriesTab />}
         {tab === 'expenses' && <ExpensesTab />}
         {tab === 'invoices' && canInvoice && <InvoicesTab invoices={invoices} onOpen={setInvoiceId} />}
@@ -133,6 +210,7 @@ export function BillingPage() {
       <TimeEntryDialog open={timeOpen} onOpenChange={setTimeOpen} />
       <ExpenseDialog open={expenseOpen} onOpenChange={setExpenseOpen} />
       <GenerateInvoiceDialog open={genOpen} onOpenChange={setGenOpen} onGenerated={setInvoiceId} />
+      <LogPaymentDialog open={payOpen} onOpenChange={setPayOpen} onLogged={setInvoiceId} />
       <InvoiceDetailDialog invoiceId={invoiceId} open={Boolean(invoiceId)} onOpenChange={(o) => !o && setInvoiceId(null)} />
     </div>
   )

@@ -179,11 +179,22 @@ export function ClientDetailPage() {
               <div className="grid gap-5 sm:grid-cols-2">
                 <Detail label="Email" value={client.email} />
                 <Detail label="Phone" value={client.phone} />
-                <Detail label="Company" value={client.company_name} />
-                <Detail label="Registration number" value={client.registration_number} />
+                {client.type === 'individual' ? (
+                  <>
+                    <Detail label="Occupation" value={client.occupation} />
+                    <Detail label="Gender" value={client.gender ? client.gender[0].toUpperCase() + client.gender.slice(1) : null} />
+                    <Detail label="Date of birth" value={client.date_of_birth ? format(new Date(client.date_of_birth), 'PP') : null} />
+                    <Detail label="ID number" value={client.identification_number} />
+                  </>
+                ) : (
+                  <>
+                    <Detail label="Company" value={client.company_name} />
+                    <Detail label="Registration number" value={client.registration_number} />
+                  </>
+                )}
                 <Detail label="Website" value={client.website} />
                 <Detail label="Location" value={[client.city, client.country].filter(Boolean).join(', ')} />
-                <Detail label="Added" value={format(new Date(client.created_at), 'PP')} />
+                <Detail label="Client since" value={format(new Date(client.client_since), 'PP')} />
               </div>
               {client.notes && (
                 <div className="mt-6">

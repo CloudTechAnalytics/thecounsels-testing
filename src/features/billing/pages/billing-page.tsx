@@ -61,14 +61,12 @@ function OverviewTab({
   stats,
   personal,
   invoices,
-  branchScope,
   onOpenInvoice,
 }: {
   canFinancials: boolean
   stats: ReturnType<typeof useBillingStats>
   personal: ReturnType<typeof usePersonalStats>
   invoices: InvoiceRow[]
-  branchScope: ReturnType<typeof useBranchScope>
   onOpenInvoice: (id: string) => void
 }) {
   const s = stats.data
@@ -80,12 +78,6 @@ function OverviewTab({
 
   return (
     <div className="space-y-6">
-      {branchScope.canSelect && (
-        <div className="flex justify-end">
-          <BranchSelector options={branchScope.options} value={branchScope.selectedBranchId} onChange={branchScope.setSelectedBranchId} />
-        </div>
-      )}
-
       {canFinancials ? (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
           <StatTile label="Revenue (MTD)" value={s ? formatMoneyCompact(s.revenueMTD) : '—'} hint="Actual payments received this month" icon={Banknote} />
@@ -175,19 +167,24 @@ export function BillingPage() {
         }
       />
 
-      <div className="flex gap-1 border-b border-border">
-        {tabs.map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={cn(
-              'border-b-2 px-4 py-2.5 text-sm font-medium transition-colors',
-              tab === t ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground',
-            )}
-          >
-            {TAB_LABEL[t]}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border">
+        <div className="flex gap-1">
+          {tabs.map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={cn(
+                'border-b-2 px-4 py-2.5 text-sm font-medium transition-colors',
+                tab === t ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {TAB_LABEL[t]}
+            </button>
+          ))}
+        </div>
+        {branchScope.canSelect && (
+          <BranchSelector options={branchScope.options} value={branchScope.selectedBranchId} onChange={branchScope.setSelectedBranchId} />
+        )}
       </div>
 
       <div className="mt-6">
@@ -197,7 +194,6 @@ export function BillingPage() {
             stats={stats}
             personal={personal}
             invoices={invoices.data ?? []}
-            branchScope={branchScope}
             onOpenInvoice={setInvoiceId}
           />
         )}

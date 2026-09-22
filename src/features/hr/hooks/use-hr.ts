@@ -18,7 +18,14 @@ export function useUpdateEmployeeProfile(organizationId: string | null) {
   return useMutation({
     mutationFn: ({ userId, patch }: { userId: string; patch: Partial<StaffProfileRow> }) =>
       hrService.updateEmployeeProfile(organizationId!, userId, patch),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['hr', 'employees', organizationId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['hr', 'employees', organizationId] })
+      // An employment-status change may have also flipped memberships.status
+      // (see hrService.updateEmployeeProfile) — keep the other member lists
+      // that read from that table in sync too.
+      qc.invalidateQueries({ queryKey: ['administration', 'members', organizationId] })
+      qc.invalidateQueries({ queryKey: ['firm-members', organizationId] })
+    },
   })
 }
 

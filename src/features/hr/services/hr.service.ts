@@ -8,6 +8,15 @@ import type {
   OnboardingTemplate, OnboardingItem, OnboardingProgress, HrAnnouncementRow, LeaveSummaryRow,
 } from '@/features/hr/types'
 
+/** employment_status values that mean "this person shouldn't have
+ * workspace access right now" — synced to memberships.status = 'suspended'.
+ * 'on_leave' is deliberately excluded: leave doesn't imply access should be
+ * cut (they may still need to check messages, approve things, etc.). */
+const NO_ACCESS_EMPLOYMENT_STATUSES = new Set(['suspended', 'terminated', 'resigned', 'former_employee'])
+/** Setting employment_status back to one of these reactivates access if it
+ * was suspended by the sync above. */
+const REGAINS_ACCESS_EMPLOYMENT_STATUSES = new Set(['active', 'onboarding', 'applicant'])
+
 export const hrService = {
   /** Merges the firm's existing member list (memberships+profiles+roles,
    * already used everywhere else in the app) with staff_profiles' HR
@@ -46,11 +55,53 @@ export const hrService = {
       })
   },
 
-  async updateEmployeeProfile(organizationId: string, userId: string, patch: Partial<StaffProfileRow>): Promise<void> {
+  /** employment_status (this function's patch) is an HR record label —
+   * memberships.status is the actual sign-in/workspace-access gate
+   * everything else (RLS, is_org_member, etc.) checks. Those two used to
+   * be fully decoupled: HR could mark someone "Suspended" here and the
+   * person could still log in and use the app, because nothing ever wrote
+   * to `memberships`. Real gap reported after HR suspended an employee
+   * and access wasn't actually revoked — this keeps them in sync for the
+   * statuses where the intent is unambiguous, without touching the org
+   * owner's own access (mirrors the safety rule members-panel.tsx uses
+   * for suspend/remove — an accidental employment-status edit should
+   * never be able to lock out the one guaranteed-access account). */
+  async updateEmployeeProfile(organizationId: string, userId: string, patch: Partial<StaffProfileRow>): Promise<{ accessChange: 'suspended' | 'active' | null }> {
     const { error } = await supabase
       .from('staff_profiles')
       .upsert({ organization_id: organizationId, user_id: userId, ...patch }, { onConflict: 'organization_id,user_id' })
     if (error) throw error
+
+    let accessChange: 'suspended' | 'active' | null = null
+    if (patch.employment_status) {
+      const desired = NO_ACCESS_EMPLOYMENT_STATUSES.has(patch.employment_status) ? 'suspended'
+        : REGAINS_ACCESS_EMPLOYMENT_STATUSES.has(patch.employment_status) ? 'active'
+        : null
+      if (desired) {
+        const { data: membership, error: memReadErr } = await supabase
+          .from('memberships')
+          .select('id, status, is_owner')
+          .eq('organization_id', organizationId)
+          .eq('user_id', userId)
+          .maybeSingle()
+        if (memReadErr) throw memReadErr
+        if (membership && !membership.is_owner && membership.status !== desired) {
+          const { error: memErr } = await supabase.from('memberships').update({ status: desired }).eq('id', membership.id)
+          if (memErr) throw memErr
+          accessChange = desired
+          await supabase.rpc('log_audit', {
+            p_org: organizationId,
+            p_action: desired === 'suspended' ? 'member.suspended' : 'member.reactivated',
+            p_entity_type: 'membership',
+            p_entity_id: membership.id,
+            p_summary: desired === 'suspended'
+              ? `Suspended workspace access (employment status set to ${patch.employment_status})`
+              : `Reactivated workspace access (employment status set to ${patch.employment_status})`,
+          })
+        }
+      }
+    }
+
     await supabase.rpc('log_audit', {
       p_org: organizationId,
       p_action: 'employee.updated',
@@ -58,6 +109,7 @@ export const hrService = {
       p_entity_id: userId,
       p_summary: 'Updated an employee profile',
     })
+    return { accessChange }
   },
 
   // ---- Departments ----

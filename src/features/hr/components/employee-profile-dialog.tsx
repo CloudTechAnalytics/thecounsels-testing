@@ -49,7 +49,7 @@ export function EmployeeProfileDialog({ employee, open, onOpenChange }: { employ
 
   const submit = async () => {
     try {
-      await update.mutateAsync({
+      const { accessChange } = await update.mutateAsync({
         userId: employee.userId,
         patch: {
           employee_code: form.employee_code.trim() || null,
@@ -63,7 +63,13 @@ export function EmployeeProfileDialog({ employee, open, onOpenChange }: { employ
           bio: form.bio.trim() || null,
         },
       })
-      toast.success('Employee profile updated')
+      if (accessChange === 'suspended') {
+        toast.success('Employee profile updated', { description: 'Their workspace access was suspended to match — they can no longer sign in.' })
+      } else if (accessChange === 'active') {
+        toast.success('Employee profile updated', { description: 'Their workspace access was reactivated to match — they can sign in again.' })
+      } else {
+        toast.success('Employee profile updated')
+      }
       onOpenChange(false)
     } catch (err) {
       toast.error('Could not update profile', { description: errorMessage(err) })

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { platformService, type PlanInput, type PlanPriceInput } from '@/features/platform/services/platform.service'
+import { administrationService } from '@/features/administration/services/administration.service'
 import { supabase } from '@/shared/lib/supabase'
 import type { AuditLog } from '@/shared/types/database.types'
 
@@ -95,6 +96,26 @@ export function useTrials() {
 }
 export function useAllMembers() {
   return useQuery({ queryKey: keys.members, queryFn: () => platformService.listAllMembers() })
+}
+/** Platform Console's own suspend/reactivate for the cross-org directory —
+ * reuses administrationService (memberships RLS already lets platform
+ * admins write to any org's memberships, see is_org_admin()'s bypass), just
+ * invalidates the platform-wide list instead of a single org's roster. */
+export function usePlatformSetMembershipStatus(organizationId: string | null) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ membershipId, status, name }: { membershipId: string; status: 'active' | 'suspended'; name: string }) =>
+      administrationService.setMembershipStatus(membershipId, organizationId!, status, name),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.members }),
+  })
+}
+export function usePlatformRemoveMember(organizationId: string | null) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ membershipId, name }: { membershipId: string; name: string }) =>
+      administrationService.removeMember(membershipId, organizationId!, name),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.members }),
+  })
 }
 export function useRevenueAnalytics() {
   return useQuery({ queryKey: ['platform', 'revenue-analytics'], queryFn: () => platformService.getRevenueAnalytics() })

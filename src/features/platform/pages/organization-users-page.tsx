@@ -1,20 +1,125 @@
 import * as React from 'react'
 import { format } from 'date-fns'
-import { Info } from 'lucide-react'
-import { useAllMembers } from '@/features/platform/hooks/use-platform'
+import { Info, MoreHorizontal, Ban, RotateCcw, Trash2 } from 'lucide-react'
+import { useAllMembers, usePlatformSetMembershipStatus, usePlatformRemoveMember } from '@/features/platform/hooks/use-platform'
+import type { MemberDirectoryRow } from '@/features/platform/types'
 import { PageHeader } from '@/shared/components/page-header'
 import { Card } from '@/shared/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/shared/components/ui/table'
 import { Badge, type BadgeProps } from '@/shared/components/ui/badge'
+import { Button } from '@/shared/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui/select'
 import { Skeleton } from '@/shared/components/ui/skeleton'
+import { ConfirmDialog } from '@/shared/components/confirm-dialog'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/shared/components/ui/dropdown-menu'
 import { initialsOf } from '@/shared/lib/format'
+import { errorMessage } from '@/shared/lib/errors'
+import { toast } from '@/shared/components/ui/sonner'
 
 const STATUS: Record<string, BadgeProps['variant']> = {
   active: 'success',
   invited: 'warning',
   suspended: 'destructive',
   disabled: 'muted',
+}
+
+/** Platform-only escape hatch for exactly the situation that prompted this:
+ * a firm needs a seat freed (e.g. remove one Managing Partner so another can
+ * be added) and asking the org's own admin isn't possible/practical. Unlike
+ * the firm's own Members panel, this deliberately does NOT hide actions for
+ * is_owner — platform admins are the one role who should be able to do this
+ * even when the target is the org's owner — but the confirm copy calls that
+ * out so it's never done blind. */
+function MemberActionsMenu({ member }: { member: MemberDirectoryRow }) {
+  const organizationId = member.organization?.id ?? null
+  const [confirmSuspend, setConfirmSuspend] = React.useState(false)
+  const [confirmRemove, setConfirmRemove] = React.useState(false)
+  const setStatus = usePlatformSetMembershipStatus(organizationId)
+  const remove = usePlatformRemoveMember(organizationId)
+  const name = member.user?.full_name ?? member.user?.email ?? 'this user'
+  const suspended = member.status === 'suspended'
+
+  const toggleSuspend = async () => {
+    try {
+      await setStatus.mutateAsync({ membershipId: member.id, status: suspended ? 'active' : 'suspended', name })
+      toast.success(suspended ? `${name} reactivated` : `${name} deactivated`, {
+        description: suspended ? 'They can sign in again.' : 'They can no longer sign in, but nothing they created was touched.',
+      })
+      setConfirmSuspend(false)
+    } catch (err) {
+      toast.error('Action failed', { description: errorMessage(err) })
+    }
+  }
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon" aria-label={`Actions for ${name}`}>
+            <MoreHorizontal className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          {suspended ? (
+            <DropdownMenuItem onClick={toggleSuspend}>
+              <RotateCcw className="h-4 w-4" /> Set active
+            </DropdownMenuItem>
+          ) : (
+            <DropdownMenuItem onClick={() => setConfirmSuspend(true)}>
+              <Ban className="h-4 w-4" /> Set inactive
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setConfirmRemove(true)}>
+            <Trash2 className="h-4 w-4" /> Remove from organization
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <ConfirmDialog
+        open={confirmSuspend}
+        onOpenChange={setConfirmSuspend}
+        title="Set member inactive"
+        destructive
+        confirmLabel="Set inactive"
+        loading={setStatus.isPending}
+        description={
+          <>
+            {name} will immediately lose the ability to sign in to {member.organization?.name ?? 'this organization'}.
+            {member.is_owner && <> <strong>This person is the organization's owner</strong> — confirm the firm has another way to manage their account before continuing.</>}
+            {' '}Nothing they created (matters, documents, time entries) is affected, and this is fully reversible.
+          </>
+        }
+        onConfirm={toggleSuspend}
+      />
+
+      <ConfirmDialog
+        open={confirmRemove}
+        onOpenChange={setConfirmRemove}
+        title="Remove from organization"
+        destructive
+        confirmPhrase="REMOVE"
+        confirmLabel="Remove"
+        loading={remove.isPending}
+        description={
+          <>
+            {name} will permanently lose access to {member.organization?.name ?? 'this organization'}'s workspace and their seat is freed immediately.
+            {member.is_owner && <> <strong>This person is the organization's owner</strong> — removing them may leave the firm without an admin unless another owner already exists.</>}
+            {' '}This does not delete their account or anything they created — only their membership here.
+          </>
+        }
+        onConfirm={async () => {
+          try {
+            await remove.mutateAsync({ membershipId: member.id, name })
+            toast.success(`${name} removed from ${member.organization?.name ?? 'the organization'}`)
+            setConfirmRemove(false)
+          } catch (err) {
+            toast.error('Could not remove', { description: errorMessage(err) })
+          }
+        }}
+      />
+    </>
+  )
 }
 
 export function OrganizationUsersPage() {
@@ -39,7 +144,7 @@ export function OrganizationUsersPage() {
     <div>
       <PageHeader
         title="Organization Users"
-        description="Every user across all customer firms — read only."
+        description="Every user across all customer firms."
         actions={
           organizations.length > 1 ? (
             <Select value={orgFilter} onValueChange={setOrgFilter}>
@@ -59,8 +164,9 @@ export function OrganizationUsersPage() {
         <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
         <p className="text-muted-foreground">
           This is a platform oversight directory. <span className="font-medium text-foreground">Firm users are created
-          by each organization's own admin</span> inside their workspace (Firm Settings) — the platform never creates or
-          edits a firm's users directly. Use Support Mode if you need to act inside a firm.
+          by each organization's own admin</span> inside their workspace (Firm Settings) — the platform doesn't create
+          or edit a firm's users directly. Setting a member inactive or removing them here is a support action for when
+          a firm can't do it themselves (e.g. freeing a seat) — use Support Mode instead if you need to act inside a firm.
         </p>
       </div>
 
@@ -87,6 +193,7 @@ export function OrganizationUsersPage() {
                 <TableHead>Role</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Last active</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -121,6 +228,9 @@ export function OrganizationUsersPage() {
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {m.user?.last_seen_at ? format(new Date(m.user.last_seen_at), 'MMM d, yyyy') : 'Never'}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <MemberActionsMenu member={m} />
                   </TableCell>
                 </TableRow>
               ))}

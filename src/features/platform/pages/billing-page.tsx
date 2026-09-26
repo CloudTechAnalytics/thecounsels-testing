@@ -10,7 +10,7 @@ import { Badge } from '@/shared/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/shared/components/ui/table'
 import { Skeleton } from '@/shared/components/ui/skeleton'
 import { initialsOf, formatNaira, formatMoneyCompact } from '@/shared/lib/format'
-import { monthlyEquivalent } from '@/shared/lib/billing-cycle'
+import { CYCLE_LABEL, monthlyEquivalent } from '@/shared/lib/billing-cycle'
 
 function monthly(row: SubscriptionRow): number {
   if (!row.plan) return 0
@@ -121,7 +121,7 @@ export function BillingPage() {
                   <TableCell>
                     <Badge variant="outline">{s.plan?.name}</Badge>
                   </TableCell>
-                  <TableCell className="text-sm capitalize text-muted-foreground">{s.billing_cycle}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{CYCLE_LABEL[s.billing_cycle]}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{format(new Date(s.current_period_end!), 'MMM d, yyyy')}</TableCell>
                   <TableCell className="text-right text-sm font-medium">{formatNaira(monthly(s))}</TableCell>
                 </TableRow>

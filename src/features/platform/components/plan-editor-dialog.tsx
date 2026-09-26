@@ -30,8 +30,13 @@ type Draft = {
   features: Record<string, boolean>
 }
 
-type PriceDraft = { monthly: string; quarterly: string; yearly: string }
-const emptyPrice: PriceDraft = { monthly: '', quarterly: '', yearly: '' }
+type PriceDraft = { monthly: string; quarterly: string; semiannual: string; yearly: string }
+const emptyPrice: PriceDraft = { monthly: '', quarterly: '', semiannual: '', yearly: '' }
+
+/** Auto-fill multipliers off monthly: 10% off quarterly, 14% off 6 months, 2 months free yearly. */
+const QUARTERLY_FACTOR = 2.7
+const SEMIANNUAL_FACTOR = 5.16
+const YEARLY_FACTOR = 10
 
 function toDraft(plan?: Plan | null): Draft {
   return {
@@ -63,15 +68,15 @@ export function PlanEditorDialog({
   )
   const [activeCurrency, setActiveCurrency] = React.useState<SupportedCurrency>('NGN')
 
-  // Quarterly/yearly auto-follow monthly (10% off quarterly, 2 months free
-  // yearly) per currency independently, same "auto-follow until manually
+  // Quarterly/6-month/yearly auto-follow monthly (see the *_FACTOR constants)
+  // per currency independently, same "auto-follow until manually
   // touched" convention as the rest of this dialog — an existing plan's
   // already-stored prices for a currency count as already-edited, so
   // opening this dialog never silently overwrites real numbers.
-  const editedRef = React.useRef<Record<SupportedCurrency, { q: boolean; y: boolean }>>(
-    Object.fromEntries(SUPPORTED_CURRENCIES.map((c) => [c, { q: false, y: false }])) as Record<
+  const editedRef = React.useRef<Record<SupportedCurrency, { q: boolean; s: boolean; y: boolean }>>(
+    Object.fromEntries(SUPPORTED_CURRENCIES.map((c) => [c, { q: false, s: false, y: false }])) as Record<
       SupportedCurrency,
-      { q: boolean; y: boolean }
+      { q: boolean; s: boolean; y: boolean }
     >,
   )
 
@@ -87,6 +92,7 @@ export function PlanEditorDialog({
       next.NGN = {
         monthly: String(plan.price_monthly),
         quarterly: plan.price_quarterly != null ? String(plan.price_quarterly) : '',
+        semiannual: plan.price_semiannual != null ? String(plan.price_semiannual) : '',
         yearly: String(plan.price_yearly),
       }
     }
@@ -95,14 +101,18 @@ export function PlanEditorDialog({
         next[row.currency as SupportedCurrency] = {
           monthly: String(row.price_monthly),
           quarterly: row.price_quarterly != null ? String(row.price_quarterly) : '',
+          semiannual: row.price_semiannual != null ? String(row.price_semiannual) : '',
           yearly: String(row.price_yearly),
         }
       }
     }
     setPrices(next)
     editedRef.current = Object.fromEntries(
-      SUPPORTED_CURRENCIES.map((c) => [c, { q: Boolean(next[c].quarterly), y: Boolean(next[c].yearly) }]),
-    ) as Record<SupportedCurrency, { q: boolean; y: boolean }>
+      SUPPORTED_CURRENCIES.map((c) => [
+        c,
+        { q: Boolean(next[c].quarterly), s: Boolean(next[c].semiannual), y: Boolean(next[c].yearly) },
+      ]),
+    ) as Record<SupportedCurrency, { q: boolean; s: boolean; y: boolean }>
     // existingPrices intentionally excluded — only needs to seed once per
     // open, same reasoning as the Assigned Team checklist elsewhere.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -119,8 +129,9 @@ export function PlanEditorDialog({
       ...p,
       [currency]: {
         monthly: value,
-        quarterly: !edited.q && value && n ? String(Math.round(n * 2.7)) : p[currency].quarterly,
-        yearly: !edited.y && value && n ? String(n * 10) : p[currency].yearly,
+        quarterly: !edited.q && value && n ? String(Math.round(n * QUARTERLY_FACTOR)) : p[currency].quarterly,
+        semiannual: !edited.s && value && n ? String(Math.round(n * SEMIANNUAL_FACTOR)) : p[currency].semiannual,
+        yearly: !edited.y && value && n ? String(n * YEARLY_FACTOR) : p[currency].yearly,
       },
     }))
   }
@@ -142,6 +153,7 @@ export function PlanEditorDialog({
         // right NGN price.
         price_monthly: Number(ngn.monthly) || 0,
         price_quarterly: ngn.quarterly === '' ? undefined : Number(ngn.quarterly) || 0,
+        price_semiannual: ngn.semiannual === '' ? undefined : Number(ngn.semiannual) || 0,
         price_yearly: Number(ngn.yearly) || 0,
         max_users: draft.max_users === '' ? null : Number(draft.max_users),
         storage_gb: Number(draft.storage_gb) || 0,
@@ -155,6 +167,7 @@ export function PlanEditorDialog({
           currency: c,
           price_monthly: Number(prices[c].monthly) || 0,
           price_quarterly: prices[c].quarterly === '' ? null : Number(prices[c].quarterly) || 0,
+          price_semiannual: prices[c].semiannual === '' ? null : Number(prices[c].semiannual) || 0,
           price_yearly: Number(prices[c].yearly) || 0,
         })),
       })
@@ -211,7 +224,7 @@ export function PlanEditorDialog({
               ))}
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>Monthly ({symbol})</Label>
                 <Input type="number" value={p.monthly} onChange={(e) => onMonthlyChange(activeCurrency, e.target.value)} />
@@ -225,7 +238,19 @@ export function PlanEditorDialog({
                     editedRef.current[activeCurrency].q = true
                     setPrices((prev) => ({ ...prev, [activeCurrency]: { ...prev[activeCurrency], quarterly: e.target.value } }))
                   }}
-                  placeholder={p.monthly ? String(Math.round(Number(p.monthly) * 2.7)) : ''}
+                  placeholder={p.monthly ? String(Math.round(Number(p.monthly) * QUARTERLY_FACTOR)) : ''}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>6 Months ({symbol})</Label>
+                <Input
+                  type="number"
+                  value={p.semiannual}
+                  onChange={(e) => {
+                    editedRef.current[activeCurrency].s = true
+                    setPrices((prev) => ({ ...prev, [activeCurrency]: { ...prev[activeCurrency], semiannual: e.target.value } }))
+                  }}
+                  placeholder={p.monthly ? String(Math.round(Number(p.monthly) * SEMIANNUAL_FACTOR)) : ''}
                 />
               </div>
               <div className="space-y-1.5">
@@ -237,12 +262,12 @@ export function PlanEditorDialog({
                     editedRef.current[activeCurrency].y = true
                     setPrices((prev) => ({ ...prev, [activeCurrency]: { ...prev[activeCurrency], yearly: e.target.value } }))
                   }}
-                  placeholder={p.monthly ? String(Number(p.monthly) * 10) : ''}
+                  placeholder={p.monthly ? String(Number(p.monthly) * YEARLY_FACTOR) : ''}
                 />
               </div>
             </div>
             <p className="text-xs text-muted-foreground">
-              Quarterly and yearly auto-fill from monthly (10% off quarterly, 2 months free yearly) until you edit one
+              Quarterly, 6 months and yearly auto-fill from monthly (10% off quarterly, 14% off 6 months, 2 months free yearly) until you edit one
               directly — per currency, independently. Leaving a currency at 0 means this plan isn't offered in it yet.
             </p>
           </div>

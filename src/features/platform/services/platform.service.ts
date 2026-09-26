@@ -20,6 +20,7 @@ export interface PlanInput {
   description?: string | null
   price_monthly?: number
   price_quarterly?: number
+  price_semiannual?: number
   price_yearly?: number
   max_users?: number | null
   storage_gb?: number
@@ -35,6 +36,7 @@ export interface PlanPriceInput {
   currency: string
   price_monthly: number
   price_quarterly: number | null
+  price_semiannual: number | null
   price_yearly: number
 }
 import type {
@@ -210,7 +212,7 @@ export const platformService = {
       supabase.from('profiles').select('*', { count: 'exact', head: true }).gte('last_seen_at', startOfDay.toISOString()).then((r) => r.count ?? 0),
       supabase
         .from('subscriptions')
-        .select('billing_cycle, status, plan:plans!subscriptions_plan_id_fkey(price_monthly, price_quarterly, price_yearly)')
+        .select('billing_cycle, status, plan:plans!subscriptions_plan_id_fkey(price_monthly, price_quarterly, price_semiannual, price_yearly)')
         .eq('status', 'active'),
     ])
 
@@ -527,7 +529,7 @@ export const platformService = {
     const { data, error } = await supabase
       .from('subscriptions')
       .select(
-        'status, billing_cycle, created_at, cancelled_at, plan:plans!subscriptions_plan_id_fkey(name, price_monthly, price_quarterly, price_yearly), organization:organizations(id, name)',
+        'status, billing_cycle, created_at, cancelled_at, plan:plans!subscriptions_plan_id_fkey(name, price_monthly, price_quarterly, price_semiannual, price_yearly), organization:organizations(id, name)',
       )
     if (error) throw error
 
@@ -536,7 +538,7 @@ export const platformService = {
       billing_cycle: BillingCycle
       created_at: string
       cancelled_at: string | null
-      plan: { name: string; price_monthly: number; price_quarterly: number | null; price_yearly: number } | null
+      plan: { name: string; price_monthly: number; price_quarterly: number | null; price_semiannual: number | null; price_yearly: number } | null
       organization: { id: string; name: string } | null
     }
     const subs = (data ?? []) as unknown as Row[]
@@ -597,6 +599,7 @@ export const platformService = {
     const byCycle = [
       { label: 'Monthly', value: active.filter((s) => s.billing_cycle === 'monthly').reduce((sum, s) => sum + mv(s), 0) },
       { label: 'Quarterly', value: active.filter((s) => s.billing_cycle === 'quarterly').reduce((sum, s) => sum + mv(s), 0) },
+      { label: '6 Months', value: active.filter((s) => s.billing_cycle === 'semiannual').reduce((sum, s) => sum + mv(s), 0) },
       { label: 'Yearly', value: active.filter((s) => s.billing_cycle === 'yearly').reduce((sum, s) => sum + mv(s), 0) },
     ]
 

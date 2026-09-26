@@ -21,7 +21,7 @@ export type MembershipStatus = 'invited' | 'active' | 'suspended' | 'disabled'
 export type InvitationStatus = 'pending' | 'accepted' | 'revoked' | 'expired'
 export type AccessScope = 'organization' | 'branch' | 'multiple_branches' | 'personal'
 export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'paused' | 'cancelled' | 'expired' | 'suspended' | 'awaiting_payment'
-export type BillingCycle = 'monthly' | 'quarterly' | 'yearly'
+export type BillingCycle = 'monthly' | 'quarterly' | 'semiannual' | 'yearly'
 export type ClientType = 'individual' | 'corporate'
 export type ClientStatus = 'active' | 'inactive' | 'prospect'
 export type MatterStatus = 'open' | 'pending' | 'in_court' | 'closed' | 'won' | 'lost' | 'appeal' | 'under_review' | 'resolved'
@@ -435,6 +435,7 @@ export interface Database {
           currency: string
           price_monthly: number
           price_quarterly: number | null
+          price_semiannual: number | null
           price_yearly: number
           max_users: number | null
           storage_gb: number
@@ -455,6 +456,7 @@ export interface Database {
           currency?: string
           price_monthly?: number
           price_quarterly?: number | null
+          price_semiannual?: number | null
           price_yearly?: number
           max_users?: number | null
           storage_gb?: number
@@ -477,6 +479,7 @@ export interface Database {
           currency: string
           price_monthly: number
           price_quarterly: number | null
+          price_semiannual: number | null
           price_yearly: number
         } & Timestamps
         Insert: {
@@ -485,6 +488,7 @@ export interface Database {
           currency: string
           price_monthly?: number
           price_quarterly?: number | null
+          price_semiannual?: number | null
           price_yearly?: number
         }
         Update: Partial<Database['public']['Tables']['plan_prices']['Insert']>

@@ -169,7 +169,7 @@ function ManualPaymentRow({ row }: { row: SubscriptionRow }) {
             <p className="truncate text-sm font-medium">{row.organization?.name ?? '—'}</p>
             <p className="truncate text-xs text-muted-foreground">
               {row.plan?.name ?? 'No plan'} · {row.billing_country ?? 'Country not set'} · {formatNaira(Number(row.amount ?? 0), row.currency)}
-              /{row.billing_cycle === 'yearly' ? 'yr' : row.billing_cycle === 'quarterly' ? 'qtr' : 'mo'} ·{' '}
+              /{row.billing_cycle === 'yearly' ? 'yr' : row.billing_cycle === 'semiannual' ? '6mo' : row.billing_cycle === 'quarterly' ? 'qtr' : 'mo'} ·{' '}
               {formatDistanceToNow(new Date(row.updated_at), { addSuffix: true })}
             </p>
           </div>

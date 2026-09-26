@@ -13,7 +13,7 @@ import { Label } from '@/shared/components/ui/label'
 import { Skeleton } from '@/shared/components/ui/skeleton'
 import { ConfirmDialog } from '@/shared/components/confirm-dialog'
 import { formatNaira, daysUntil } from '@/shared/lib/format'
-import { cyclePrice, CYCLE_SUFFIX } from '@/shared/lib/billing-cycle'
+import { cyclePrice, CYCLE_LABEL, CYCLE_SUFFIX } from '@/shared/lib/billing-cycle'
 import { toast } from '@/shared/components/ui/sonner'
 import type { BadgeProps } from '@/shared/components/ui/badge'
 
@@ -131,7 +131,7 @@ export function PlanSummary() {
       </Card>
 
       <Card className="space-y-3 p-6 text-sm">
-        <div className="flex justify-between"><span className="text-muted-foreground">Billing cycle</span><span className="font-medium capitalize">{sub.billing_cycle}</span></div>
+        <div className="flex justify-between"><span className="text-muted-foreground">Billing cycle</span><span className="font-medium">{CYCLE_LABEL[sub.billing_cycle]}</span></div>
         <div className="flex justify-between"><span className="text-muted-foreground">Seats</span><span className="font-medium">{activeSeats} of {sub.seats} used</span></div>
         <div className="flex justify-between"><span className="text-muted-foreground">Payment status</span><span className="font-medium">{statusMeta.label}</span></div>
         {sub.status !== 'trialing' && (

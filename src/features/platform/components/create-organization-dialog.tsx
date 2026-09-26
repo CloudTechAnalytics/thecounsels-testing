@@ -224,6 +224,7 @@ export function CreateOrganizationDialog() {
                           <SelectContent>
                             <SelectItem value="monthly">Monthly</SelectItem>
                             <SelectItem value="quarterly">Quarterly</SelectItem>
+                            <SelectItem value="semiannual">6 Months</SelectItem>
                             <SelectItem value="yearly">Yearly</SelectItem>
                           </SelectContent>
                         </Select>

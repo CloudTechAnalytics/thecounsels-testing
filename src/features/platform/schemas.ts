@@ -18,7 +18,7 @@ export const createOrgWithAdminSchema = z.object({
   orgType: z.enum(ORG_TYPES),
   // 'trial' = 14-day trial; otherwise a plan id for a paid subscription. Ignored for demo/internal.
   plan: z.string().min(1, 'Choose a plan'),
-  billingCycle: z.enum(['monthly', 'quarterly', 'yearly']),
+  billingCycle: z.enum(['monthly', 'quarterly', 'semiannual', 'yearly']),
   adminName: z.string().min(2, "Enter the admin's full name"),
   adminEmail: z.string().min(1, 'Email is required').email('Enter a valid email'),
   adminPassword: strongPassword,

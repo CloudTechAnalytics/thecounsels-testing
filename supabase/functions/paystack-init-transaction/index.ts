@@ -17,8 +17,8 @@ const cors = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
-type BillingCycle = 'monthly' | 'quarterly' | 'yearly'
-const VALID_CYCLES: BillingCycle[] = ['monthly', 'quarterly', 'yearly']
+type BillingCycle = 'monthly' | 'quarterly' | 'semiannual' | 'yearly'
+const VALID_CYCLES: BillingCycle[] = ['monthly', 'quarterly', 'semiannual', 'yearly']
 
 interface Payload {
   organizationId: string
@@ -101,6 +101,7 @@ Deno.serve(async (req: Request) => {
   const cyclePrice: Record<BillingCycle, unknown> = {
     monthly: priceSource.price_monthly,
     quarterly: priceSource.price_quarterly,
+    semiannual: priceSource.price_semiannual,
     yearly: priceSource.price_yearly,
   }
   const price = cyclePrice[billingCycle]

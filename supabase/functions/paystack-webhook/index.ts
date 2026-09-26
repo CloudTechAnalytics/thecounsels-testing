@@ -131,6 +131,7 @@ Deno.serve(async (req: Request) => {
       if (!nextBilling) {
         const next = new Date()
         if (billingCycle === 'yearly') next.setFullYear(next.getFullYear() + 1)
+        else if (billingCycle === 'semiannual') next.setMonth(next.getMonth() + 6)
         else if (billingCycle === 'quarterly') next.setMonth(next.getMonth() + 3)
         else next.setMonth(next.getMonth() + 1)
         nextBilling = next.toISOString()

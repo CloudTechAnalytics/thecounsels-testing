@@ -33,7 +33,7 @@ function pricesFor(plan: PlanWithPrices, currency: SupportedCurrency) {
   const row = plan.plan_prices?.find((p) => p.currency === currency)
   if (row) return row
   if (currency === (plan.currency || 'NGN')) {
-    return { price_monthly: plan.price_monthly, price_quarterly: plan.price_quarterly, price_yearly: plan.price_yearly }
+    return { price_monthly: plan.price_monthly, price_quarterly: plan.price_quarterly, price_semiannual: plan.price_semiannual, price_yearly: plan.price_yearly }
   }
   return null
 }
@@ -96,7 +96,7 @@ function TrialCard({ selected, onSelect, days }: { selected: boolean; onSelect: 
   )
 }
 
-/** Monthly/Quarterly/Yearly segmented control — irrelevant while Trial is
+/** Monthly/Quarterly/6 Months/Yearly segmented control — irrelevant while Trial is
  * selected (nothing's being charged yet), so the caller only renders this
  * once a paid tier is picked. */
 function CycleToggle({ cycle, onChange }: { cycle: BillingCycle; onChange: (c: BillingCycle) => void }) {
